@@ -42,7 +42,7 @@ typedef struct SurfaceHitT
   float2 uv;
 }SurfaceHit;
 
-
+// From here
 static inline float3 EyeRayDirNormalized(float x, float y, float4x4 a_mViewProjInv)
 {
   float4 pos = float4(2.0f*x - 1.0f, 2.0f*y - 1.0f, 0.0f, 1.0f );

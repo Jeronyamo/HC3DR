@@ -20,6 +20,17 @@
 
 using LiteImage::ICombinedImageSampler;
 
+
+template <class T> class AdamOptimizer2;
+
+struct DLightSourceUpdater {
+  uint lightID, instID; // const
+  float2 size; // const, for reference (m_lights stores light instances, so this is an instance size)
+  float4x4 instMat; // updated
+
+  void update(AdamOptimizer2<float> &_opt, std::shared_ptr<ISceneObject> _accel_struct, std::vector<LightSource>&_m_lights, const DLightSource &_deriv, int iter);
+};
+
 struct SceneInfo
 {
   int width;
@@ -81,6 +92,28 @@ public:
   virtual void PathTraceFromInputRaysBlock(uint tid, uint channels, const RayPosAndW* in_rayPosAndNear, const RayDirAndT* in_rayDirAndFar, 
                                            float* out_color, uint a_passNum);
   virtual void RayTraceBlock(uint tid, uint channels, float* out_color, uint a_passNum);
+
+  virtual float PathTraceDR(uint tid, uint channels, uint a_passNum, float* out_color, const float* a_refImg);
+
+  virtual float3 linearToSRGB(float3 _col); // copy from imageutils
+  virtual void LightEdgeSamplingInit();
+  virtual float LightEdgeSamplingStep(float* out_color, const float* a_refImg,
+                                      float* a_DerivPosImg, float* a_DerivNegImg, uint a_passNum);
+  virtual float3 sampleImage(const float2 &_coords, const float *_image);
+  virtual float3 sampleImageBilinear(const float2 &_coords, const float *_image);
+
+  virtual uint2 getImageIndicesSomehow(const float3 &_pos, const float3 &_dir);
+  virtual float2 getImageSScoords(const float3 &_pos, const float3 &_dir);
+  virtual float3 dirFromSScoords(float _x, float _y);
+
+  virtual float3 projectSSperspective(const float3 &_p, const float2 &_dxy);
+  virtual float3 projectSSdmatmul(const float4x4 &_mat, const float3 &_v, const float3 &_dv_local);
+  virtual float3 projectSSderivatives(const float3 & _v, const float2 &_dv_ss);
+  virtual void getColorAfterIntersection(uint tid, const Lite_Hit* in_hit,
+                                     const float2* bars, float4* finalColor);
+  virtual float3 getColor1(const float3 &_pos, const float3 &_dir);
+  virtual float3 getColor2(const float3 &_pos, const float3 &_dir);
+  void getImageIndicesCheck();
 
   virtual void CommitDeviceData() {}                                     // will be overriden in generated class
   virtual void GetExecutionTime(const char* a_funcName, float a_out[4]); // will be overriden in generated class
@@ -221,7 +254,7 @@ public:
 
   BsdfSample MaterialSampleAndEval(uint a_materialId, uint bounce, float4 wavelengths, RandomGen* a_gen, float3 v, float3 n, float3 tan, float2 tc, 
                                    MisData* a_misPrev, const uint a_currRayFlags);
-                                    
+
   BsdfEval   MaterialEval         (uint a_materialId, float4 wavelengths, float3 l, float3 v, float3 n, float3 tan, float2 tc);
 
   uint32_t BlendSampleAndEval(uint a_materialId, uint bounce, uint layer, float4 wavelengths, RandomGen* a_gen, float3 v, float3 n, float2 tc, 
@@ -262,7 +295,10 @@ public:
 
   std::shared_ptr<ISceneObject> m_pAccelStruct = nullptr;
 
+  std::vector<DLightSourceUpdater> m_lightInst;
   std::vector<LightSource> m_lights;
+  std::vector<DLightSource> m_dlights;
+  std::vector<AdamOptimizer2<float>*> m_adams;
   float4 m_envColor      = float4{0.0f};
   float4 m_camRespoceRGB = float4(1,1,1,1);
 

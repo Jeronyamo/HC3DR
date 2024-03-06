@@ -70,7 +70,7 @@ template<typename T>
 class AdamOptimizer2 : public IGradientOptimizer<T> // implementation according to the original paper
 {
 public:
-  AdamOptimizer2(int _params_count, T _lr = T(0.15f), T _beta_1 = T(0.9f), T _beta_2 = T(0.999f), T _eps = T(1e-8)) 
+  AdamOptimizer2(int _params_count = 0, T _lr = T(0.15f), T _beta_1 = T(0.9f), T _beta_2 = T(0.999f), T _eps = T(1e-8)) 
   {
     lr = _lr;
     beta_1 = _beta_1;
@@ -79,6 +79,13 @@ public:
     V = std::vector<T>(_params_count, 0);
     S = std::vector<T>(_params_count, 0);
     params_count = _params_count;
+  }
+
+  void setParamsCount(uint _params_count, T _lr = T(0.01f)) {
+    V = std::vector<T>(_params_count, 0);
+    S = std::vector<T>(_params_count, 0);
+    params_count = _params_count;
+    lr = _lr;
   }
   
   void step(T *params_ptr, const T* grad_ptr, int iter) override

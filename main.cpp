@@ -5,11 +5,17 @@
 #include "integrator_pt.h"
 #include "ArgParser.h"
 #include"mi_materials.h"
+// #include "external/LiteMath/Image2d.h"
+
+
 
 void SaveFrameBufferToEXR(float* data, int width, int height, int channels, const char* outfilename, float a_normConst = 1.0f);
 bool SaveImage4fToBMP(const float* rgb, int width, int height, const char* outfilename, float a_normConst = 1.0f, float a_gamma = 2.2f);
+std::vector<float> LoadImage4fFromEXR(const char* infilename, int* pW, int* pH);
 
 float4x4 ReadMatrixFromString(const std::string& str);
+
+void Image2D4fRegularizer(int w, int h, const float* data, float* grad);
 
 #ifdef USE_VULKAN
 #include "vk_context.h"
@@ -36,17 +42,18 @@ int main(int argc, const char** argv)
   //  exit(0);
   //}
 
-  int FB_WIDTH        = 1024;
-  int FB_HEIGHT       = 1024;
+  int FB_WIDTH        = 512;
+  int FB_HEIGHT       = 512;
   int FB_CHANNELS     = 4;
 
-  int PASS_NUMBER     = 1024;
+  int PASS_NUMBER     = 16;
   int NAIVE_PT_REPEAT = 1; // make more samples for naivept which is quite useful for testing cases to get less noise for 
 
-  std::string scenePath      = "../resources/HydraCore/hydra_app/tests/test_42/statex_00001.xml"; 
+  std::string scenePath      = "../scenes/scenelib/statex_00001.xml"; 
   std::string sceneDir       = "";          // alternative path of scene library root folder (by default it is the folder where scene xml is located)
   std::string imageOut       = "z_out.bmp";
-  std::string integratorType = "mispt";
+  std::string integratorType = "shadowpt";
+  std::string refImgpath     = "z_ref.exr";
   float gamma                = 2.4f; // out gamma, special value, see save image functions
 
   ///////////////////////////////////////////////////////////////////////////////////////
@@ -59,6 +66,13 @@ int main(int argc, const char** argv)
 
   if(args.hasOption("-out"))
     imageOut = args.getOptionValue<std::string>("-out");
+
+  if(args.hasOption("-ref"))
+    refImgpath = args.getOptionValue<std::string>("-ref");
+
+  int gradMode = 1;
+  if(args.hasOption("-grad"))
+    gradMode = args.getOptionValue<int>("-grad");
 
   std::filesystem::path out_path {imageOut};
   auto dir = out_path.parent_path();
@@ -174,7 +188,48 @@ int main(int argc, const char** argv)
   else
   #endif
     pImpl = std::make_shared<Integrator>(FB_WIDTH*FB_HEIGHT, spectral_mode, features);
+
+  ///////////////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////////////
+
+  // std::vector<float> realColor(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
+  // auto pImpl = std::make_shared<Integrator>(FB_WIDTH*FB_HEIGHT, spectral_mode, gradMode, features);
   
+  std::cout << "[drmain]: Loading reference image ... " << refImgpath.c_str() << std::endl;
+  // std::vector<float> refColor(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
+  int refW = 0, refH = 0;
+  std::vector<uint> refColor1 = LiteImage::LoadBMP("z_ref.bmp", &refW, &refH);
+  // std::vector<float> refColor1 = LoadImage4fFromEXR(refImgpath.c_str(), &refW, &refH);
+  
+  if(refW  == 0 || refH == 0)
+  {
+    std::cout << "[drmain]: can't load reference image '" << refImgpath.c_str() << "'" << std::endl;
+    exit(0);
+  }
+  else if(refW != FB_WIDTH || refH != FB_HEIGHT)
+  {
+    std::cout << "[drmain]: bad resolution of reference image, must   be " << FB_WIDTH << ", " << FB_HEIGHT << std::endl;
+    std::cout << "[drmain]: bad resolution of reference image, actual is " << refW << ", " << refH << std::endl;
+    exit(0);
+  }
+  printf("BMP size: %d\n", refColor1.size());
+  std::vector<float> refColor;
+  refColor.reserve(refColor1.size() * 4);
+  for (auto __col : refColor1) {
+    float3 _tmp{(__col & 255) * (1.f / 255.f / 0.996078f),
+                ((__col >> 8) & 255) * (1.f / 255.f / 0.996078f),
+                ((__col >> 16) & 255) * (1.f / 255.f / 0.996078f)};
+    refColor.push_back(_tmp.z);
+    refColor.push_back(_tmp.y);
+    refColor.push_back(_tmp.x);
+    refColor.push_back(1.f);
+  }
+  refColor1.clear();
+  // forgot abt alpha channel
+  // std::vector<float> refColor;
+  // refColor.insert(refColor.end(), refColor1.rbegin(), refColor1.rend());
+  // refColor1.clear();
+
   ///////////////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -232,7 +287,7 @@ int main(int argc, const char** argv)
     }
   }
   
-  const float normConst = 1.0f/float(PASS_NUMBER);
+  const float normConst = 1.0f/float(PASS_NUMBER); // SHADOW PT
   if(enableShadowPT)
   {
     std::cout << "[main]: PathTraceBlock(Shadow-PT) ... " << std::endl;
@@ -241,7 +296,90 @@ int main(int argc, const char** argv)
 
     pImpl->SetIntegratorType(Integrator::INTEGRATOR_SHADOW_PT);
     pImpl->UpdateMembersPlainData();
-    pImpl->PathTraceBlock(FB_WIDTH*FB_HEIGHT, FB_CHANNELS, realColor.data(), PASS_NUMBER);
+    pImpl->LightEdgeSamplingInit();
+    pImpl->getImageIndicesCheck();
+
+    bool forward = false;
+    if (forward) {
+      pImpl->PathTraceBlock(FB_WIDTH*FB_HEIGHT, FB_CHANNELS, realColor.data(), PASS_NUMBER);
+      {
+        const std::string outName = "z_ref.exr";
+        SaveFrameBufferToEXR(realColor.data(), FB_WIDTH, FB_HEIGHT, FB_CHANNELS, outName.c_str(), normConst);
+      }
+      {
+        const std::string outName = "z_ref.bmp";
+        SaveImage4fToBMP(realColor.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, gamma);
+      }
+    }
+    else {
+      float normConst = 1.0f/float(PASS_NUMBER);
+      std::vector<float> derivDataPos(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
+      std::vector<float> derivDataNeg(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
+
+      for(int iter = 0; iter < 100; iter++) 
+      {
+        const int eachTen        = iter/20 + 1;
+        const int currPassNumber = PASS_NUMBER; //std::min(PASS_NUMBER*eachTen, 64);
+        normConst                = 1.0f/float(currPassNumber);
+
+        std::cout << "[drmain]: Render(" << std::setfill('0') << std::setw(2) << iter << ", spp = " << currPassNumber << ") ..\n";
+        std::cout.flush();
+
+        std::fill(realColor.begin(), realColor.end(), 0.0f);
+        std::fill(derivDataPos.begin(), derivDataPos.end(), 0.0f);
+        std::fill(derivDataNeg.begin(), derivDataNeg.end(), 0.0f);
+
+        pImpl->PathTraceBlock(FB_WIDTH*FB_HEIGHT, FB_CHANNELS, realColor.data(), PASS_NUMBER);
+        std::cout << "Path trace complete" << std::endl;
+        for (uint i = 0; i < FB_WIDTH*FB_HEIGHT*FB_CHANNELS; ++i) {
+          realColor[i] = clamp(realColor[i]*normConst, 0.0f, 1.0f);
+
+          // copy of linearToSRGB - I need final image for correct loss function calculation
+          if(realColor[i] <= 0.00313066844250063f)
+            realColor[i] *= 12.92f;
+          else
+            realColor[i] = 1.055f * std::pow(realColor[i], 1.0f/2.4f) - 0.055f;
+        }
+
+        float loss = pImpl->LightEdgeSamplingStep(realColor.data(), refColor.data(),
+                                                  derivDataPos.data(), derivDataNeg.data(), PASS_NUMBER);
+
+        // pImpl->GetExecutionTime("PathTraceDR", timings);  
+        std::cout << "Iteration " << iter << " done, loss = " << loss << ", time = " << timings[0] << " ms" << std::endl;
+
+        // may apply some filters here (for example median filter)
+
+        if(gradMode == 1)
+        {
+          // I'm too lazy
+          {
+            std::stringstream strOut;
+            strOut << "./out/" << imageOutClean << "_out_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
+            auto outName = strOut.str();
+            SaveImage4fToBMP(realColor.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), 0.5f, 2.4f);
+          }
+          {
+            std::stringstream strOut;
+            strOut << "./grad/" << imageOutClean << "_dPos_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
+            auto outName = strOut.str();
+            SaveImage4fToBMP(derivDataPos.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
+          }
+          {
+            std::stringstream strOut;
+            strOut << "./grad/" << imageOutClean << "_dNeg_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
+            auto outName = strOut.str();
+            SaveImage4fToBMP(derivDataNeg.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
+          }
+        }
+        else if(gradMode == 0)
+        {
+          const std::string outName = imageOutClean + ".exr";
+          SaveFrameBufferToEXR(realColor.data(), FB_WIDTH, FB_HEIGHT, FB_CHANNELS, outName.c_str(), 1.f);
+          break;
+        }
+      }
+    }
+  
     
     if(saveHDR) 
     {

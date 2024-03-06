@@ -33,6 +33,13 @@ struct LightSource
   float    mult;
 };
 
+struct DLightSource
+{
+  float dI_dCx = 0.f, dI_dCy = 0.f, dI_dCz = 0.f, // center(pos)
+        dI_dSx = 0.f, dI_dSy = 0.f; // size
+  // uint n_samples = 0u;
+};
+
 struct LightSample
 {
   float3 pos;

@@ -207,29 +207,6 @@ int main(int argc, const char** argv)
     float loss = pImpl->PathTraceDR(FB_WIDTH*FB_HEIGHT, FB_CHANNELS, realColor.data(), currPassNumber,
                                     refColor.data(), imgData.data(), imgGrad.data(), imgGrad.size());                                
 
-    //std::vector<float> gradTest(imgGrad.size()); 
-    //std::fill(gradTest.begin(), gradTest.end(), 0.0f);
-    //Image2D4fRegularizer(wh[0], wh[1], imgData.data(), gradTest.data());
-    //for(size_t i=0;i<imgGrad.size();i++)
-    //  imgGrad[i] += gradTest[i]*0.5f;
-
-    //if(iter == 30) 
-    //{
-    //  Image2D4fRegularizer(wh[0], wh[1], imgData.data(), gradTest.data());
-    //  std::ofstream fout("grad_30.txt");
-    //  for(int y=0;y<wh[1];y++) {
-    //    for(int x=0;x<wh[0];x++) 
-    //      fout << std::setfill('0') << std::setw(5) << gradTest[y*wh[0]+x] << " ";
-    //    fout << std::endl;
-    //  }
-    //
-    //  std::ofstream fout2("grad_30_rt.txt");
-    //  for(int y=0;y<wh[1];y++) {
-    //    for(int x=0;x<wh[0];x++) 
-    //      fout2 << std::setfill('0') << std::setw(5) << imgGrad[y*wh[0]+x] << " ";
-    //    fout2 << std::endl;
-    //  }
-    //}
 
     pImpl->GetExecutionTime("PathTraceDR", timings);  
   

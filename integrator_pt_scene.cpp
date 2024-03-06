@@ -1044,6 +1044,7 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
 
   for(auto lightInst : scene.InstancesLights())
   {
+    // printf("YEP, ADD LIGHT INSTANCE\n");
     const std::wstring ltype = lightInst.lightNode.attribute(L"type").as_string();
     const std::wstring shape = lightInst.lightNode.attribute(L"shape").as_string();
     const std::wstring ldist = lightInst.lightNode.attribute(L"distribution").as_string();
@@ -1365,6 +1366,12 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
     std::cout << "[LoadScene]: mesh = " << meshPath.c_str() << std::endl;
     #endif
     auto currMesh = cmesh4::LoadMeshFromVSGF(meshPath.c_str());
+    // if (currMesh.vPos4f.size() == 4) {
+    //   printf("Found mesh: %s\n", meshPath.c_str());
+    //   for (int i = 0; i < currMesh.vPos4f.size(); ++i)
+    //     printf("v%d: %f, %f, %f, %f\n", i, currMesh.vPos4f[i].x, currMesh.vPos4f[i].y,
+    //                                        currMesh.vPos4f[i].z, currMesh.vPos4f[i].w);
+    // }
     auto geomId   = m_pAccelStruct->AddGeom_Triangles3f((const float*)currMesh.vPos4f.data(), currMesh.vPos4f.size(), currMesh.indices.data(), currMesh.indices.size(), BUILD_HIGH, sizeof(float)*4);
 
     (void)geomId; // silence unused var. warning
@@ -1402,10 +1409,29 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
       #endif
       inst.instId = realInstId;
     }
-    m_pAccelStruct->AddInstance(inst.geomId, inst.matrix);
+
+    if (inst.lightInstId != -1) {
+      // printf("Printing light matrix...\n");
+      // for (int i = 0; i < 4; ++i)
+      //   printf("%f, %f, %f, %f\n", inst.matrix.get_row(i)[0], inst.matrix.get_row(i)[1],
+      //                              inst.matrix.get_row(i)[2], inst.matrix.get_row(i)[3]);
+      printf("Light ID: %d, Instance ID: %d\n", inst.lightInstId, inst.instId);
+
+      float4x4 _tmpmat{inst.matrix};
+      float4 _dpos{-0.1f, 0.f, 0.f, 0.f};
+      _tmpmat.col(3) += _dpos;
+      m_lights[inst.lightInstId].pos += _dpos;
+      uint _id = m_pAccelStruct->AddInstance(inst.geomId, _tmpmat);
+      if (_id != inst.instId) {
+        printf("ERROR: ID MISMATCH: actual %d, predicted %d\n", _id, inst.instId);
+      }
+      m_lightInst.push_back({inst.lightInstId, inst.instId, m_lights[inst.lightInstId].size, _tmpmat});
+      // m_pAccelStruct->UpdateInstance(inst.instId, _tmpmat);
+    }
+    else
+      m_pAccelStruct->AddInstance(inst.geomId, inst.matrix);
     m_normMatrices.push_back(transpose(inverse4x4(inst.matrix)));
     m_remapInst.push_back(inst.rmapId);
-
     m_instIdToLightInstId[inst.instId] = inst.lightInstId;
     realInstId++;
   }
