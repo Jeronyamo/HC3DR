@@ -212,7 +212,7 @@ int main(int argc, const char** argv)
     std::cout << "[drmain]: bad resolution of reference image, actual is " << refW << ", " << refH << std::endl;
     exit(0);
   }
-  printf("BMP size: %d\n", refColor1.size());
+  // printf("BMP size: %d\n", refColor1.size());
   std::vector<float> refColor;
   refColor.reserve(refColor1.size() * 4);
   for (auto __col : refColor1) {

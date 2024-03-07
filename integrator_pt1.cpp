@@ -1033,41 +1033,32 @@ float3 Integrator::projectSSderivatives(const float3 & _v, const float2 &_dv_ss)
   return dv;
 }
 
+float Integrator::sampleSSfrom2Dpoints(const float2 *_v_ss, uint _v_size, int &_edge_int) {
+  float _cumulative_len[_v_size + 1];
+  _cumulative_len[0] = 0.f;
+
+  for (int i = 1; i < _v_size + 1; ++i) {
+    _cumulative_len[i] = length(_v_ss[i % _v_size] - _v_ss[i - 1]) + _cumulative_len[i - 1];
+  }
+
+  double _t = (double(std::rand()) / RAND_MAX) * _cumulative_len[_v_size];
+
+  for (int i = 0; i < _v_size; ++i)
+    if (_t >= _cumulative_len[i] && _t < _cumulative_len[i + 1]) {
+      _edge_int = i;
+      return (_t - _cumulative_len[i]) / (_cumulative_len[i + 1] - _cumulative_len[i]);
+    }
+  printf("Sampling error!\n");
+  return 0.f;
+}
 
 // add parameter - reference image,
 //                 num_pixels(? as N for mean(MSE), but maybe some other coef)
 float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
                                         float* a_DerivPosImg, float* a_DerivNegImg, uint a_passNum) {
-  const uint num_samples = 64u;
-  const float norm_coef = 1.f / (num_samples * 4);
+  const uint num_samples = 128u;
+  const float norm_coef = 1.f / (num_samples);
   float _loss = 0.f;
-
-  float3 __maxCol{0.f};
-  uint2 __minCoords{1024u}, __maxCoords{0u};
-  uint2 __minCoords2{1024u}, __maxCoords2{0u};
-  for (uint y = 0; y < m_winHeight; ++y)
-    for (uint x = 0; x < m_winWidth; ++x) {
-      float3 __col{ a_refImg[(y * m_winWidth + x) * 4 + 0],
-                    a_refImg[(y * m_winWidth + x) * 4 + 1],
-                    a_refImg[(y * m_winWidth + x) * 4 + 2] };
-      float3 __col2{ out_color[(y * m_winWidth + x) * 4 + 0],
-                     out_color[(y * m_winWidth + x) * 4 + 1],
-                     out_color[(y * m_winWidth + x) * 4 + 2] };
-      if (__col.x > 17 && __col.y > 17 && __col.z > 17) {
-        __minCoords.x = min(__minCoords.x, x);
-        __minCoords.y = min(__minCoords.y, y);
-        __maxCoords.x = max(__maxCoords.x, x);
-        __maxCoords.y = max(__maxCoords.y, y);
-      }
-      if ((__col2.x > 1.f - 1e-5f) && (__col2.y > 1.f - 1e-5f) && (__col2.z > 1.f - 1e-5f)) {
-        __minCoords2.x = min(__minCoords2.x, x);
-        __minCoords2.y = min(__minCoords2.y, y);
-        __maxCoords2.x = max(__maxCoords2.x, x);
-        __maxCoords2.y = max(__maxCoords2.y, y);
-      }
-    }
-  printf("Coords: min = %d, %d; max = %d, %d\n", __minCoords.x, __minCoords.y, __maxCoords.x, __maxCoords.y);
-  printf("Coords2: min = %d, %d; max = %d, %d\n", __minCoords2.x, __minCoords2.y, __maxCoords2.x, __maxCoords2.y);
 
   for (uint i = 0u; i < m_lightInst.size(); ++i) {
     DLightSourceUpdater _lsu = m_lightInst[i];
@@ -1083,157 +1074,108 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
       // Rectangle. Edges 01-12-23-30
 
       // v0 -> v1 -> v2 -> v3 -> v0
-      // float3 _v[4] = {_center + float3(-_ls.size.x, 0.f, -_ls.size.y),
-      //                 _center + float3(-_ls.size.x, 0.f,  _ls.size.y),
-      //                 _center + float3( _ls.size.x, 0.f,  _ls.size.y),
-      //                 _center + float3( _ls.size.x, 0.f, -_ls.size.y)};
+      float3 _v[4] = {_center + float3(-_ls.size.x, 0.f, -_ls.size.y),
+                      _center + float3(-_ls.size.x, 0.f,  _ls.size.y),
+                      _center + float3( _ls.size.x, 0.f,  _ls.size.y),
+                      _center + float3( _ls.size.x, 0.f, -_ls.size.y)};
+      float2 _v_ss[4] = {getImageSScoords(_p, normalize(_v[0] - _p)),
+                         getImageSScoords(_p, normalize(_v[1] - _p)),
+                         getImageSScoords(_p, normalize(_v[2] - _p)),
+                         getImageSScoords(_p, normalize(_v[3] - _p))};
       // for (int i = 0; i < 4; ++i)
       //   printf("v%d: %f, %f, %f\n", i, _v[i].x, _v[i].y, _v[i].z);
 
-      for (int _edge_ind = 0; _edge_ind < 4; ++_edge_ind) {
-        for (int n = 0; n < num_samples; ++n) {
-          double _t = double(std::rand()) / RAND_MAX;
-          float3 v0 = _center + float3{  _edge_ind &  2 ? _ls.size.x : -_ls.size.x, 0.f,
-                                        (_edge_ind == 1 || _edge_ind == 2) ? _ls.size.y : -_ls.size.y };
-          float3 v1 = _center + float3{ (_edge_ind +  1) & 2 ? _ls.size.x : -_ls.size.x, 0.f,
-                                        (_edge_ind == 0 || _edge_ind == 1) ? _ls.size.y : -_ls.size.y };
+      // for (int _edge_ind = 0; _edge_ind < 4; ++_edge_ind) {
+      for (int n = 0; n < num_samples; ++n) {
+        int _edge_ind = 0;
+        float _t = sampleSSfrom2Dpoints(_v_ss, 4, _edge_ind);
+        // double _t = double(std::rand()) / RAND_MAX;
+        float3 v0 = _center + float3{  _edge_ind &  2 ? _ls.size.x : -_ls.size.x, 0.f,
+                                      (_edge_ind == 1 || _edge_ind == 2) ? _ls.size.y : -_ls.size.y };
+        float3 v1 = _center + float3{ (_edge_ind +  1) & 2 ? _ls.size.x : -_ls.size.x, 0.f,
+                                      (_edge_ind == 0 || _edge_ind == 1) ? _ls.size.y : -_ls.size.y };
 
-          // printf("V0: %f, %f, %f; V1: %f, %f, %f\n", v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
-          // float3 _m = v0 + (v1 - v0) * _t;
-          float3 _d0 = normalize(v0 - _p), _d1 = normalize(v1 - _p);
-          float3 _edge_center = 0.5f * (v1 + v0);
-          // printf("DirToEdge: %f, %f, %f; t: %f\n", _d.x, _d.y, _d.z, _t);
+        // printf("V0: %f, %f, %f; V1: %f, %f, %f\n", v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
+        // float3 _m = v0 + (v1 - v0) * _t;
+        float3 _d0 = normalize(v0 - _p), _d1 = normalize(v1 - _p);
+        float3 _edge_center = 0.5f * (v1 + v0);
+        // printf("DirToEdge: %f, %f, %f; t: %f\n", _d.x, _d.y, _d.z, _t);
 
-          float2 v0ss = getImageSScoords(_p, _d0),
-                 v1ss = getImageSScoords(_p, _d1),
-                 _center_ss = getImageSScoords(_p, normalize(_center - _p)),
-                 _edgec_ss  = getImageSScoords(_p, normalize(_edge_center - _p));
-          float2 _n{v0ss.y - v1ss.y, v1ss.x - v0ss.x}, _m_ss = v0ss + (v1ss - v0ss) * _t;
-          if (dot(_n, _edgec_ss - _center_ss) < 0)
-            _n *= -1;
-          float3 f_in = getColor2(_p, dirFromSScoords((_m_ss - _n * 0.3f).x, (_m_ss - _n * 0.3f).y)),
-                f_out = getColor2(_p, dirFromSScoords((_m_ss + _n * 0.3f).x, (_m_ss + _n * 0.3f).y));
+        float2 v0ss = getImageSScoords(_p, _d0),
+               v1ss = getImageSScoords(_p, _d1),
+               _center_ss = getImageSScoords(_p, normalize(_center - _p)),
+               _edgec_ss  = getImageSScoords(_p, normalize(_edge_center - _p));
+        float2 _n{v1ss.y - v0ss.y, v0ss.x - v1ss.x}, _m_ss = v0ss + (v1ss - v0ss) * _t;
+        _n = normalize(_n);
+        if (dot(_n, normalize(_edgec_ss - _center_ss)) < 0)
+          _n *= -1;
+        float3 f_in = getColor2(_p, dirFromSScoords((_m_ss - _n * 1.9f).x, (_m_ss - _n * 1.9f).y)),
+              f_out = getColor2(_p, dirFromSScoords((_m_ss + _n * 1.9f).x, (_m_ss + _n * 1.9f).y));
+        float3 f_diff{f_in - f_out};
 
-          // float2 _dv0_ss{v1ss.y - _m_ss.y, _m_ss.x - v1ss.x}, _dv1_ss{_m_ss.y - v0ss.y, v0ss.x - _m_ss.x};
-          float2 _dv0_ss{_n.x * _t, _n.y * _t}, _dv1_ss{_n.x * (1.f - _t), _n.y * (1.f - _t)}; // screen space derivatives
-          // backprop from dv0ss, dv1ss to dv0, dv1
-          float3 _dv0 = projectSSderivatives(v0, _dv0_ss), _dv1 = projectSSderivatives(v1, _dv1_ss);
+        // float2 _dv0_ss{v1ss.y - _m_ss.y, _m_ss.x - v1ss.x}, _dv1_ss{_m_ss.y - v0ss.y, v0ss.x - _m_ss.x};
+        float2 _dv0_ss{_n.x * _t, _n.y * _t}, _dv1_ss{_n.x * (1.f - _t), _n.y * (1.f - _t)}; // screen space derivatives
+        // backprop from dv0ss, dv1ss to dv0, dv1
+        float3 _dv0 = projectSSderivatives(v0, _dv0_ss), _dv1 = projectSSderivatives(v1, _dv1_ss);
 
-          // image derivative and loss:
-          uint __ind = ((uint)floorf(_m_ss.y) * m_winWidth + (uint)floorf( _m_ss.x)) << 2;
-          // 4-channel image, but only need 3 components
-          float3 _colRef = {a_refImg[__ind], a_refImg[__ind+1], a_refImg[__ind+2]},
-                 _col = {out_color[__ind], out_color[__ind+1], out_color[__ind+2]};
-          // out_color[__ind] = 1.f;
-          // out_color[__ind+1] = 0.f;
-          // out_color[__ind+2] = 0.f;
-          _loss += dot(_col - _colRef, _col - _colRef);
-          // printf("In: %f, %f, %f; Out: %f, %f, %f; Color: %f, %f, %f; Ref: %f, %f, %f\n",
-          //         f_in.x, f_in.y, f_in.z, f_out.x, f_out.y, f_out.z,
-          //         _col.x, _col.y, _col.z, _colRef.x, _colRef.y, _colRef.z);
+        // image derivative and loss:
+        uint __ind = ((uint)floorf(_m_ss.y) * m_winWidth + (uint)floorf( _m_ss.x)) << 2;
+        // 4-channel image, but only need 3 components
+        float3 _colRef = {a_refImg[__ind], a_refImg[__ind+1], a_refImg[__ind+2]},
+               _col = {out_color[__ind], out_color[__ind+1], out_color[__ind+2]};
+        float3 _colDiff{_col - _colRef};
+        // show samples on the images
+        // out_color[__ind] = 1.f;
+        // out_color[__ind+1] = 0.f;
+        // out_color[__ind+2] = 0.f;
 
-// v0
-          float3 _dIdv0x = _dv0.x * (f_in - f_out),
-                 _dIdv0y = _dv0.y * (f_in - f_out),
-                 _dIdv0z = _dv0.z * (f_in - f_out);
-          float3 _dMSEdv0 = { dot(_col - _colRef, _dIdv0x),
-                              dot(_col - _colRef, _dIdv0y),
-                              dot(_col - _colRef, _dIdv0z)};
-          float3 _dMSEdcenter = { dot(_dMSEdv0, DLightRectParams::dcenterx()),
-                                  dot(_dMSEdv0, DLightRectParams::dcentery()),
-                                  dot(_dMSEdv0, DLightRectParams::dcenterz()) };
-          _dMSEdcenter *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
-          float2 _dMSEdsize = { dot(_dMSEdv0, DLightRectParams::dsizex(_edge_ind)),
-                                dot(_dMSEdv0, DLightRectParams::dsizey(_edge_ind)) };
-          _dMSEdsize *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+        _loss += dot(_colDiff, _colDiff);
 
 // v0
-          float3 _dIdv1x = _dv1.x * (f_in - f_out),
-                 _dIdv1y = _dv1.y * (f_in - f_out),
-                 _dIdv1z = _dv1.z * (f_in - f_out);
-          float3 _dMSEdv1 = { dot(_col - _colRef, _dIdv1x),
-                              dot(_col - _colRef, _dIdv1y),
-                              dot(_col - _colRef, _dIdv1z)};
-          _dMSEdcenter += float3{ dot(_dMSEdv1, DLightRectParams::dcenterx()),
-                                  dot(_dMSEdv1, DLightRectParams::dcentery()),
-                                  dot(_dMSEdv1, DLightRectParams::dcenterz()) } * _t;
-          _dMSEdsize += float2{ dot(_dMSEdv1, DLightRectParams::dsizex(_edge_ind)),
-                                dot(_dMSEdv1, DLightRectParams::dsizey(_edge_ind)) } * _t;
+        float3 _dIdv0x = _dv0.x * f_diff,
+               _dIdv0y = _dv0.y * f_diff,
+               _dIdv0z = _dv0.z * f_diff;
+        float3 _dMSEdv0 = { dot(_colDiff, _dIdv0x),
+                            dot(_colDiff, _dIdv0y),
+                            dot(_colDiff, _dIdv0z)};
+        float3 _dMSEdcenter = { dot(_dMSEdv0, DLightRectParams::dcenterx()),
+                                dot(_dMSEdv0, DLightRectParams::dcentery()),
+                                dot(_dMSEdv0, DLightRectParams::dcenterz()) };
+        _dMSEdcenter *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+        float2 _dMSEdsize = { dot(_dMSEdv0, DLightRectParams::dsizex(_edge_ind)),
+                              dot(_dMSEdv0, DLightRectParams::dsizey(_edge_ind)) };
+        _dMSEdsize *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+
+// v1
+        float3 _dIdv1x = _dv1.x * f_diff,
+               _dIdv1y = _dv1.y * f_diff,
+               _dIdv1z = _dv1.z * f_diff;
+        float3 _dMSEdv1 = { dot(_colDiff, _dIdv1x),
+                            dot(_colDiff, _dIdv1y),
+                            dot(_colDiff, _dIdv1z)};
+        _dMSEdcenter += float3{ dot(_dMSEdv1, DLightRectParams::dcenterx()),
+                                dot(_dMSEdv1, DLightRectParams::dcentery()),
+                                dot(_dMSEdv1, DLightRectParams::dcenterz()) } * _t;
+        _dMSEdsize += float2{ dot(_dMSEdv1, DLightRectParams::dsizex(_edge_ind)),
+                              dot(_dMSEdv1, DLightRectParams::dsizey(_edge_ind)) } * _t;
 
 
-          // update parameters and loss
-          float _s1 = _dMSEdcenter.x;
-          float _s2 = _dMSEdcenter.y;
-          float _s3 = _dMSEdcenter.z;
-          // _s1 = _dv0.x * (f_in - f_out).x + _dv0.x * (f_in - f_out).y + _dv0.x * (f_in - f_out).z;
-          // _s2 = _dv0.y * (f_in - f_out).x + _dv0.y * (f_in - f_out).y + _dv0.y * (f_in - f_out).z;
-          // _s3 =  0.f;
-          if (_s1 < 0) a_DerivNegImg[__ind  ] += _s1 * -3; else a_DerivPosImg[__ind  ] += _s1 * 3;
-          if (_s2 < 0) a_DerivNegImg[__ind+1] += _s2 * -3; else a_DerivPosImg[__ind+1] += _s2 * 3;
-          if (_s3 < 0) a_DerivNegImg[__ind+2] += _s3 * -3; else a_DerivPosImg[__ind+2] += _s3 * 3;
+        // update parameters and loss
+        float _s1 = f_diff.x;
+        float _s2 = f_diff.y;
+        float _s3 = f_diff.z;
+        // _s1 = _dv0.x * (f_diff).x + _dv0.x * (f_diff).y + _dv0.x * (f_diff).z;
+        // _s2 = _dv0.y * (f_diff).x + _dv0.y * (f_diff).y + _dv0.y * (f_diff).z;
+        // _s3 = _dv0.z * (f_diff).x + _dv0.z * (f_diff).y + _dv0.z * (f_diff).z;
+        if (_s1 < 0) a_DerivNegImg[__ind  ] += _s1 * -3; else a_DerivPosImg[__ind  ] += _s1 * 3;
+        if (_s2 < 0) a_DerivNegImg[__ind+1] += _s2 * -3; else a_DerivPosImg[__ind+1] += _s2 * 3;
+        if (_s3 < 0) a_DerivNegImg[__ind+2] += _s3 * -3; else a_DerivPosImg[__ind+2] += _s3 * 3;
 
-          _deriv.dI_dCx += _dMSEdcenter.x;
-          _deriv.dI_dCy += _dMSEdcenter.y;
-          _deriv.dI_dCz += _dMSEdcenter.z;
-          _deriv.dI_dSx += _dMSEdsize.x;
-          _deriv.dI_dSy += _dMSEdsize.y;
-
-/*
-          float3 _edge_center = 0.5f * (v1 + v0);
-          float3 _n = normalize(_edge_center - _center); // edge normal?
-
-          _n = cross(_d, normalize(v1 - _p));
-          if (dot(_n, normalize(_edge_center - _center)) < 0)
-            _n *= -1;
-          // printf("EdgeNormal: %f, %f, %f; EdgeCenter: %f, %f, %f\n", _n.x, _n.y, _n.z, _edge_center.x, _edge_center.y, _edge_center.z);
-
-          float3 _d_in  = normalize(_edge_center - 0.03f * _n - _p);
-          float3 _d_out = normalize(_edge_center - 0.03f * _n + _p);
-          float3 f_in   = getColor2(_p, _d_in ),
-                 f_out  = getColor2(_p, _d_out);
-
-          // derivatives
-          float3 dI_dCx = _n.x * (f_in - f_out); // da/dCenter is always =1
-          float3 dI_dCy = _n.y * (f_in - f_out);
-          float3 dI_dCz = _n.z * (f_in - f_out);
-
-          float2 _dsize = DEdgeEquationPrim3D::da_rect_dsize(_t, _edge_ind);
-          float3 dI_dSx = _n.x * (f_in - f_out) * _dsize.x;
-          float3 dI_dSy = _n.z * (f_in - f_out) * _dsize.y;
-
-          // MSE loss
-          uint2 img_ind = getImageIndicesSomehow(_p, _d);
-          uint __ind = (img_ind.y * m_winWidth + img_ind.x) << 2;
-          // std::cout << "Img index: " << img_ind.x << ", " << img_ind.y << std::endl;
-          // 4-channel image, but only need 3
-          float3 _colRef = {a_refImg[__ind], a_refImg[__ind+1], a_refImg[__ind+2]},
-                 _col = {out_color[__ind], out_color[__ind+1], out_color[__ind+2]};
-          _col *= 1.f / (256);
-          // printf("Colors: %f, %f, %f;; %f, %f, %f\n", _col.x, _col.y, _col.z, _colRef.x, _colRef.y, _colRef.z);
-
-          _loss += dot(_col - _colRef, _col - _colRef);
-          _deriv.dI_dCx += dot(_col - _colRef, dI_dCx);
-          _deriv.dI_dCy += dot(_col - _colRef, dI_dCy);
-          _deriv.dI_dCz += dot(_col - _colRef, dI_dCz);
-          _deriv.dI_dSx += dot(_col - _colRef, dI_dSx);
-          _deriv.dI_dSy += dot(_col - _colRef, dI_dSy);
-
-          bool _print_center = false;
-          if (_print_center) {
-            float _s1 = dI_dCx.x + dI_dCx.y + dI_dCx.z;
-            float _s2 = dI_dCy.x + dI_dCy.y + dI_dCy.z;
-            float _s3 = dI_dCz.x + dI_dCz.y + dI_dCz.z;
-            if (_s1 < 0) a_DerivNegImg[__ind  ] += abs(_s1) * 3; else a_DerivPosImg[__ind  ] += _s1 * 3;
-            if (_s2 < 0) a_DerivNegImg[__ind+1] += abs(_s2) * 3; else a_DerivPosImg[__ind+1] += _s2 * 3;
-            if (_s3 < 0) a_DerivNegImg[__ind+2] += abs(_s3) * 3; else a_DerivPosImg[__ind+2] += _s3 * 3;
-          }
-          else {
-            float _s1 = dI_dSx.x + dI_dSx.y + dI_dSx.z;
-            float _s2 = dI_dSy.x + dI_dSy.y + dI_dSy.z;
-            if (_s1 < 0) a_DerivNegImg[__ind  ] += abs(_s1) * 3; else a_DerivPosImg[__ind  ] += _s1 * 3;
-            if (_s2 < 0) a_DerivNegImg[__ind+2] += abs(_s2) * 3; else a_DerivPosImg[__ind+2] += _s2 * 3;
-          }*/
-        }
+        _deriv.dI_dCx += _dMSEdcenter.x;
+        _deriv.dI_dCy += _dMSEdcenter.y;
+        _deriv.dI_dCz += _dMSEdcenter.z;
+        _deriv.dI_dSx += _dMSEdsize.x;
+        _deriv.dI_dSy += _dMSEdsize.y;
       }
     }
     // Circle. TODO
@@ -1261,22 +1203,24 @@ void DLightSourceUpdater::update(AdamOptimizer2<float> &_opt, std::shared_ptr<IS
                                                       _m_lights[lightID].size.y,
                                                       _deriv.dI_dSx, _deriv.dI_dSy);
   float c3s2[5]{0.f, 0.f, 0.f, 0.f, 0.f};
-  // _opt.step(c3s2, &_deriv.dI_dCx, iter);
-  float4 _dpos {-_deriv.dI_dCx, 0.f, 0.f, 0.f};
-  float2 _dsize{-_deriv.dI_dSx, -_deriv.dI_dSy};
+  _opt.step(c3s2, &_deriv.dI_dCx, iter);
+  float4 _dpos {c3s2[0], c3s2[1], c3s2[2], 0.f};
+  float2 _dsize{c3s2[3], c3s2[4]};
+  // float4 _dpos {-_deriv.dI_dCx, -_deriv.dI_dCy, -_deriv.dI_dCz, 0.f};
+  // float2 _dsize{-_deriv.dI_dSx, -_deriv.dI_dSy};
 
   // _dpos *= 0.15f;
   // _dsize *= 0.15f;
 
   // update both instance matrix and lightSource parameters
   _m_lights[lightID].pos += _dpos;
+  instMat.m_col[3] += _dpos;
 
   // _dsize += _m_lights[lightID].size;
   // float2 _dscale = _dsize / _m_lights[lightID].size;
   // _m_lights[lightID].size = _dsize;
-  // instMat.col(0) *= _dscale.x;
-  // instMat.col(2) *= _dscale.y;
-  instMat[0][3] += _dpos.x;
+  // instMat.m_col[0] *= _dscale.x;
+  // instMat.m_col[2] *= _dscale.y;
   // instMat.set_row(3, instMat.get_row(3) + _dpos);
   printf("Position: %f, %f, %f, derivative: %f, %f, %f\n", _m_lights[lightID].pos.x,
                                                            _m_lights[lightID].pos.y,
@@ -1293,7 +1237,7 @@ void Integrator::LightEdgeSamplingInit() {
 
   for (uint i = 0; i < m_lightInst.size(); ++i) {
     // m_dlights.push_back({});
-    __ptr[i].setParamsCount(5, 0.001f);
+    __ptr[i].setParamsCount(5, 0.01f);
     m_adams.push_back(&(__ptr[i]));
   }
   // std::cout << "Lights: " << m_lights.size() << "\n";

@@ -97,6 +97,7 @@ public:
 
   virtual float3 linearToSRGB(float3 _col); // copy from imageutils
   virtual void LightEdgeSamplingInit();
+  virtual float sampleSSfrom2Dpoints(const float2 *_v, uint _v_size, int &_edge_int);
   virtual float LightEdgeSamplingStep(float* out_color, const float* a_refImg,
                                       float* a_DerivPosImg, float* a_DerivNegImg, uint a_passNum);
   virtual float3 sampleImage(const float2 &_coords, const float *_image);

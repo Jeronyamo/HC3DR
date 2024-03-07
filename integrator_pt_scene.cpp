@@ -1418,9 +1418,10 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
       printf("Light ID: %d, Instance ID: %d\n", inst.lightInstId, inst.instId);
 
       float4x4 _tmpmat{inst.matrix};
-      float4 _dpos{-0.1f, 0.f, 0.f, 0.f};
+      float4 _dpos{-0.1f, 0.f, 0.1f, 0.f};
       _tmpmat.col(3) += _dpos;
       m_lights[inst.lightInstId].pos += _dpos;
+
       uint _id = m_pAccelStruct->AddInstance(inst.geomId, _tmpmat);
       if (_id != inst.instId) {
         printf("ERROR: ID MISMATCH: actual %d, predicted %d\n", _id, inst.instId);
