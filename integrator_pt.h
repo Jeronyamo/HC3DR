@@ -93,9 +93,13 @@ public:
                                            float* out_color, uint a_passNum);
   virtual void RayTraceBlock(uint tid, uint channels, float* out_color, uint a_passNum);
 
+  // added functions
   virtual float PathTraceDR(uint tid, uint channels, uint a_passNum, float* out_color, const float* a_refImg);
-
   virtual float3 linearToSRGB(float3 _col); // copy from imageutils
+
+  virtual void paramsIOinit(bool _do_io_stuff, const char *_fname, bool _read_write, uint _iters_to_skip = 0u);
+  virtual bool loadParamsFromFile();
+  virtual void saveParamsToFile(uint _iter);
   virtual void LightEdgeSamplingInit();
   virtual float sampleSSfrom2Dpoints(const float2 *_v, uint _v_size, int &_edge_int);
   virtual float LightEdgeSamplingStep(float* out_color, const float* a_refImg,
@@ -115,6 +119,8 @@ public:
   virtual float3 getColor1(const float3 &_pos, const float3 &_dir);
   virtual float3 getColor2(const float3 &_pos, const float3 &_dir);
   void getImageIndicesCheck();
+
+
 
   virtual void CommitDeviceData() {}                                     // will be overriden in generated class
   virtual void GetExecutionTime(const char* a_funcName, float a_out[4]); // will be overriden in generated class
@@ -296,9 +302,14 @@ public:
 
   std::shared_ptr<ISceneObject> m_pAccelStruct = nullptr;
 
+  // added members
   std::vector<DLightSourceUpdater> m_lightInst;
   std::vector<LightSource> m_lights;
-  std::vector<DLightSource> m_dlights;
+  std::fstream param_io;
+  bool read_write;
+
+
+
   std::vector<AdamOptimizer2<float>*> m_adams;
   float4 m_envColor      = float4{0.0f};
   float4 m_camRespoceRGB = float4(1,1,1,1);

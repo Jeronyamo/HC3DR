@@ -1161,9 +1161,9 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
 
 
         // update parameters and loss
-        float _s1 = f_diff.x;
-        float _s2 = f_diff.y;
-        float _s3 = f_diff.z;
+        float _s1 = _dMSEdsize.x;
+        float _s2 = _dMSEdsize.y;
+        float _s3 = f_diff.z * 0.f;
         // _s1 = _dv0.x * (f_diff).x + _dv0.x * (f_diff).y + _dv0.x * (f_diff).z;
         // _s2 = _dv0.y * (f_diff).x + _dv0.y * (f_diff).y + _dv0.y * (f_diff).z;
         // _s3 = _dv0.z * (f_diff).x + _dv0.z * (f_diff).y + _dv0.z * (f_diff).z;
@@ -1194,41 +1194,44 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
   return _loss *= norm_coef;
 }
 
-void DLightSourceUpdater::update(AdamOptimizer2<float> &_opt, std::shared_ptr<ISceneObject> _accel_struct, std::vector<LightSource>&_m_lights, const DLightSource &_deriv, int iter) {
-  printf("Position before: %f, %f, %f, derivative: %f, %f, %f\n", _m_lights[lightID].pos.x,
-                                                                  _m_lights[lightID].pos.y,
-                                                                  _m_lights[lightID].pos.z,
-                                                                  _deriv.dI_dCx, _deriv.dI_dCy, _deriv.dI_dCz);
-  printf("Size before: %f, %f, derivative: %f, %f\n", _m_lights[lightID].size.x,
-                                                      _m_lights[lightID].size.y,
-                                                      _deriv.dI_dSx, _deriv.dI_dSy);
+void DLightSourceUpdater::update(AdamOptimizer2<float> &_opt, std::shared_ptr<ISceneObject> _accel_struct,
+                                  std::vector<LightSource>&_m_lights, const DLightSource &_deriv, int iter) {
   float c3s2[5]{0.f, 0.f, 0.f, 0.f, 0.f};
   _opt.step(c3s2, &_deriv.dI_dCx, iter);
   float4 _dpos {c3s2[0], c3s2[1], c3s2[2], 0.f};
   float2 _dsize{c3s2[3], c3s2[4]};
-  // float4 _dpos {-_deriv.dI_dCx, -_deriv.dI_dCy, -_deriv.dI_dCz, 0.f};
-  // float2 _dsize{-_deriv.dI_dSx, -_deriv.dI_dSy};
-
-  // _dpos *= 0.15f;
-  // _dsize *= 0.15f;
 
   // update both instance matrix and lightSource parameters
+  // pos
+  printf("Position before: %f, %f, %f, derivative: %f, %f, %f\n", _m_lights[lightID].pos.x,
+                                                                  _m_lights[lightID].pos.y,
+                                                                  _m_lights[lightID].pos.z,
+                                                                  _deriv.dI_dCx, _deriv.dI_dCy, _deriv.dI_dCz);
+
   _m_lights[lightID].pos += _dpos;
   instMat.m_col[3] += _dpos;
 
-  // _dsize += _m_lights[lightID].size;
-  // float2 _dscale = _dsize / _m_lights[lightID].size;
-  // _m_lights[lightID].size = _dsize;
-  // instMat.m_col[0] *= _dscale.x;
-  // instMat.m_col[2] *= _dscale.y;
-  // instMat.set_row(3, instMat.get_row(3) + _dpos);
-  printf("Position: %f, %f, %f, derivative: %f, %f, %f\n", _m_lights[lightID].pos.x,
-                                                           _m_lights[lightID].pos.y,
-                                                           _m_lights[lightID].pos.z,
-                                                           c3s2[0], c3s2[1], c3s2[2]);
-  printf("Size: %f, %f, derivative: %f, %f\n", _m_lights[lightID].size.x,
-                                               _m_lights[lightID].size.y,
-                                               c3s2[3], c3s2[4]);
+  printf("Position updated: %f, %f, %f, derivative: %f, %f, %f\n", _m_lights[lightID].pos.x,
+                                                                   _m_lights[lightID].pos.y,
+                                                                   _m_lights[lightID].pos.z,
+                                                                   c3s2[0], c3s2[1], c3s2[2]);
+
+  // size
+  printf("Size before: %f, %f, derivative: %f, %f\n", _m_lights[lightID].size.x,
+                                                      _m_lights[lightID].size.y,
+                                                      _deriv.dI_dSx, _deriv.dI_dSy);
+
+  _dsize += _m_lights[lightID].size;
+  float2 _dscale = _dsize / _m_lights[lightID].size;
+  _m_lights[lightID].size = _dsize;
+  instMat.m_col[0] *= _dscale.x;
+  instMat.m_col[2] *= _dscale.y;
+
+  printf("Size updated: %f, %f, derivative: %f, %f\n", _m_lights[lightID].size.x,
+                                                       _m_lights[lightID].size.y,
+                                                       c3s2[3], c3s2[4]);
+
+  // update instance transform matrix
   _accel_struct->UpdateInstance(instID, instMat);
 }
 
@@ -1237,7 +1240,7 @@ void Integrator::LightEdgeSamplingInit() {
 
   for (uint i = 0; i < m_lightInst.size(); ++i) {
     // m_dlights.push_back({});
-    __ptr[i].setParamsCount(5, 0.01f);
+    __ptr[i].setParamsCount(5, 0.003f);
     m_adams.push_back(&(__ptr[i]));
   }
   // std::cout << "Lights: " << m_lights.size() << "\n";
@@ -1247,7 +1250,62 @@ void Integrator::LightEdgeSamplingInit() {
   // std::cout << "Size: " << m_lights[1].size.x << ", " << m_lights[1].size.y << std::endl;
 }
 
+void Integrator::paramsIOinit(bool _do_io_stuff, const char *_fname, bool _read_write, uint _iters_to_skip) {
+  if (_do_io_stuff) {
+    param_io.open(_fname);
 
+    if (!param_io) {
+      if (_read_write == false) {
+        throw std::runtime_error("Error: params IO init - cannot read from file that doesn't exist\n");
+      }
+      param_io.open(_fname, std::fstream::trunc | std::fstream::in | std::fstream::out);
+    }
+    read_write = _read_write;
+    if (_read_write == false && _iters_to_skip) {
+      uint  _iter{0u};
+      float _tmp{0.f};
+      for (uint i = 0u; i < _iters_to_skip; ++i)
+        param_io >> _iter >> _tmp >> _tmp >> _tmp >> _tmp >> _tmp;
+    }
+  }
+}
+
+bool Integrator::loadParamsFromFile() {
+  if (!param_io) return false;
+
+  for (int i = 0; i < m_lightInst.size(); ++i) {
+    DLightSourceUpdater &_tmp = m_lightInst[i];
+    LightSource &_ls = m_lights[_tmp.lightID];
+    float4 _newpos{0.f, 0.f, 0.f, 1.f};
+    float2 _newsize{0.f};
+    uint _iter{0u};
+
+    param_io >> _iter;
+    if (_iter == 0) return false;
+
+    param_io >> _newpos.x >> _newpos.y >> _newpos.z >> _newsize.x >> _newsize.y;
+
+    _tmp.instMat.m_col[0] *= _newsize.x / _ls.size.x;
+    _tmp.instMat.m_col[2] *= _newsize.y / _ls.size.y;
+    _tmp.instMat.m_col[3]  = _newpos;
+    _ls.pos = _newpos;
+    _ls.size = _newsize;
+
+    m_pAccelStruct->UpdateInstance(_tmp.instID, _tmp.instMat);
+  }
+  return true;
+}
+
+void Integrator::saveParamsToFile(uint _iter) {
+  if (!param_io) return;
+
+  _iter += 1;
+  for (int i = 0; i < m_lightInst.size(); ++i) {
+    LightSource &_ls = m_lights[m_lightInst[i].lightID];
+    param_io << _iter << " " << _ls.pos .x << " " << _ls.pos .y << " " << _ls.pos.z
+                      << " " << _ls.size.x << " " << _ls.size.y << std::endl;
+  }
+}
 
 float Integrator::PathTraceDR(uint tid, uint channels, uint a_passNum, float* out_color, const float* a_refImg) {
   m_disableImageContrib = 1;

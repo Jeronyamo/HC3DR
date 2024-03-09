@@ -1418,16 +1418,27 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
       printf("Light ID: %d, Instance ID: %d\n", inst.lightInstId, inst.instId);
 
       float4x4 _tmpmat{inst.matrix};
+
+      // change pos
       float4 _dpos{-0.1f, 0.f, 0.1f, 0.f};
-      _tmpmat.col(3) += _dpos;
+
       m_lights[inst.lightInstId].pos += _dpos;
+      _tmpmat.col(3) += _dpos;
+
+      // change size
+      float2 _dsize{0.2f, 0.2f};
+
+      _dsize += m_lights[inst.lightInstId].size;
+      float2 _dscale = _dsize / m_lights[inst.lightInstId].size;
+      m_lights[inst.lightInstId].size = _dsize;
+      _tmpmat.m_col[0] *= _dscale.x;
+      _tmpmat.m_col[2] *= _dscale.y;
 
       uint _id = m_pAccelStruct->AddInstance(inst.geomId, _tmpmat);
       if (_id != inst.instId) {
         printf("ERROR: ID MISMATCH: actual %d, predicted %d\n", _id, inst.instId);
       }
       m_lightInst.push_back({inst.lightInstId, inst.instId, m_lights[inst.lightInstId].size, _tmpmat});
-      // m_pAccelStruct->UpdateInstance(inst.instId, _tmpmat);
     }
     else
       m_pAccelStruct->AddInstance(inst.geomId, inst.matrix);
