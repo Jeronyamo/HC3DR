@@ -1,6 +1,5 @@
 cmake_minimum_required (VERSION 3.15)
 project (HydraCore3)
-set(CMAKE_BUILD_TYPE "Debug")
 
 option(USE_VULKAN "Enable Vulkan implementation" OFF)
 option(CAM_PLUGIN "Enable Cam Plugin Demo" OFF)

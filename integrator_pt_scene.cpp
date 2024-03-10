@@ -1400,8 +1400,19 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
   m_pAccelStruct->ClearScene();
   uint32_t realInstId = 0;
 
-  float4 _positions[1];
-  float2 _sizes[1];
+
+  // conference
+  float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
+  float2 _sizes[]{{0.f, -20.f}, {0.f, 0.f}};
+  // // fireplace hydra
+  // float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
+  // float2 _sizes[]{{0.f, 0.f}, {0.f, 0.f}};
+  // // living room
+  // float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
+  // float2 _sizes[]{{0.f, 0.f}, {0.f, 0.f}};
+  // // cornell
+  // float4 _positions[]{{-0.1f, 0.f, 0.1f, 0.f}};
+  // float2 _sizes[]{{0.f, 0.f}};
   int lsID = 0;
 
   for(auto inst : scene.InstancesGeom())
@@ -1418,27 +1429,51 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
     if (inst.lightInstId != -1) {
       float4 _initp{m_lights[inst.lightInstId].pos};
       float2 _inits{m_lights[inst.lightInstId].size};
-      printf("Light ID: %d, Instance ID: %d, pos: [%f, %f, %f], size: [%f, %f]\n",
-                inst.lightInstId, inst.instId, _initp.x, _initp.y, _initp.z, _inits.x, _inits.y);
+      std::string _ls_type = "NONE";
+      switch (m_lights[inst.lightInstId].geomType) {
+        case LIGHT_GEOM_RECT:
+          _ls_type = "RECT";
+          break;
+        case LIGHT_GEOM_DISC:
+          _ls_type = "DISC";
+          break;
+        case LIGHT_GEOM_SPHERE:
+          _ls_type = "SPHERE";
+          break;
+        case LIGHT_GEOM_DIRECT:
+          _ls_type = "DIR";
+          break;
+        case LIGHT_GEOM_POINT:
+          _ls_type = "POINT";
+          break;
+      }
+      printf("Light ID: %d, Inst ID: %d, type: %s, pos: [%f, %f, %f], size: [%f, %f]\n",
+                inst.lightInstId, inst.instId, _ls_type.c_str(), _initp.x, _initp.y, _initp.z, _inits.x, _inits.y);
 
       float4x4 _tmpmat{inst.matrix};
       bool _move_lights = diffrender_mode;
+      // printf("Inst matrix: [[%f, %f, %f, %f], [%f, %f, %f, %f], [%f, %f, %f, %f], [%f, %f, %f, %f]]\n",
+      //         _tmpmat[0][0], _tmpmat[0][1], _tmpmat[0][2], _tmpmat[0][3],
+      //         _tmpmat[1][0], _tmpmat[1][1], _tmpmat[1][2], _tmpmat[1][3],
+      //         _tmpmat[2][0], _tmpmat[2][1], _tmpmat[2][2], _tmpmat[2][3],
+      //         _tmpmat[3][0], _tmpmat[3][1], _tmpmat[3][2], _tmpmat[3][3]);
 
       if (_move_lights) {
         // change pos
-        float4 _dpos{-0.1f, 0.f, 0.1f, 0.f};
+        float4 _dpos{_positions[lsID]};
 
         m_lights[inst.lightInstId].pos += _dpos;
         _tmpmat.col(3) += _dpos;
 
         // change size
-        float2 _dsize{0.2f, 0.2f};
+        float2 _dsize{_sizes[lsID]};
 
         _dsize += m_lights[inst.lightInstId].size;
         float2 _dscale = _dsize / m_lights[inst.lightInstId].size;
         m_lights[inst.lightInstId].size = _dsize;
-        _tmpmat.m_col[0] *= _dscale.x;
-        _tmpmat.m_col[2] *= _dscale.y;
+        _tmpmat.m_col[2] *= _dscale.x;
+        _tmpmat.m_col[0] *= _dscale.y;
+        lsID += 1;
       }
 
       uint _id = m_pAccelStruct->AddInstance(inst.geomId, _tmpmat);

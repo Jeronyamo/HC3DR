@@ -670,19 +670,19 @@ struct DLightRectParams {
       case (4):
       case (0): {
         //--
-        return _center + make_float3(-_size.x, 0.f, -_size.y);
+        return _center + make_float3(-_size.y, 0.f, -_size.x);
       }
       case (1): {
         //-+
-        return _center + make_float3(-_size.x, 0.f,  _size.y);
+        return _center + make_float3(-_size.y, 0.f,  _size.x);
       }
       case (2): {
         //++
-        return _center + make_float3( _size.x, 0.f,  _size.y);
+        return _center + make_float3( _size.y, 0.f,  _size.x);
       }
       case (3): {
         //+-
-        return _center + make_float3( _size.x, 0.f, -_size.y);
+        return _center + make_float3( _size.y, 0.f, -_size.x);
       }
     }
     throw std::runtime_error("Error: invalid parameter (how?)\n");
@@ -701,7 +701,7 @@ struct DLightRectParams {
   }
 
   // don't forget to multiply by (1-t)/t:  v0*(1-_t) + v1*_t
-  static float3 dsizex(int _edge) {
+  static float3 dsizey(int _edge) {
     switch (_edge) {
       case (4):
       case (0): {
@@ -720,7 +720,7 @@ struct DLightRectParams {
     throw std::runtime_error("Error: invalid parameter (how?)\n");
   }
   // don't forget to multiply by (1-t)/t:  v0*(1-_t) + v1*_t
-  static float3 dsizey(int _edge) {
+  static float3 dsizex(int _edge) {
     switch (_edge) {
       case (4):
       case (0): {
@@ -1054,7 +1054,7 @@ float Integrator::sampleSSfrom2Dpoints(const float2 *_v_ss, uint _v_size, int &_
 
 float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
                                         float* a_DerivPosImg, float* a_DerivNegImg, uint _iter) {
-  const uint num_samples = 128u;
+  const uint num_samples = 512u;
   const float norm_coef = 1.f / (num_samples);
   float _loss = 0.f;
 
@@ -1063,6 +1063,7 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
     LightSource _ls = m_lights[_lsu.lightID];
     DLightSource _deriv;
     float3 _p = mul4x3(m_worldViewInv, float3(0,0,0));
+    // printf("CamPos: [%f, %f, %f]\n", _p.x, _p.y, _p.z);
     float3 _center = to_float3(_ls.pos);
 
 
@@ -1070,10 +1071,10 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
       // Rectangle. Edges 01-12-23-30
 
       // v0 -> v1 -> v2 -> v3 -> v0
-      float3 _v[4] = {_center + float3(-_ls.size.x, 0.f, -_ls.size.y),
-                      _center + float3(-_ls.size.x, 0.f,  _ls.size.y),
-                      _center + float3( _ls.size.x, 0.f,  _ls.size.y),
-                      _center + float3( _ls.size.x, 0.f, -_ls.size.y)};
+      float3 _v[4] = {_center + float3(-_ls.size.y, 0.f, -_ls.size.x),
+                      _center + float3(-_ls.size.y, 0.f,  _ls.size.x),
+                      _center + float3( _ls.size.y, 0.f,  _ls.size.x),
+                      _center + float3( _ls.size.y, 0.f, -_ls.size.x)};
       float2 _v_ss[4] = {getImageSScoords(_p, normalize(_v[0] - _p)),
                          getImageSScoords(_p, normalize(_v[1] - _p)),
                          getImageSScoords(_p, normalize(_v[2] - _p)),
@@ -1081,15 +1082,14 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
       // for (int i = 0; i < 4; ++i)
       //   printf("v%d: %f, %f, %f\n", i, _v[i].x, _v[i].y, _v[i].z);
 
-      // for (int _edge_ind = 0; _edge_ind < 4; ++_edge_ind) {
       for (int n = 0; n < num_samples; ++n) {
         int _edge_ind = 0;
         float _t = sampleSSfrom2Dpoints(_v_ss, 4, _edge_ind);
         // double _t = double(std::rand()) / RAND_MAX;
-        float3 v0 = _center + float3{  _edge_ind &  2 ? _ls.size.x : -_ls.size.x, 0.f,
-                                      (_edge_ind == 1 || _edge_ind == 2) ? _ls.size.y : -_ls.size.y };
-        float3 v1 = _center + float3{ (_edge_ind +  1) & 2 ? _ls.size.x : -_ls.size.x, 0.f,
-                                      (_edge_ind == 0 || _edge_ind == 1) ? _ls.size.y : -_ls.size.y };
+        float3 v0 = _center + float3{  _edge_ind &  2 ? _ls.size.y : -_ls.size.y, 0.f,
+                                      (_edge_ind == 1 || _edge_ind == 2) ? _ls.size.x : -_ls.size.x };
+        float3 v1 = _center + float3{ (_edge_ind +  1) & 2 ? _ls.size.y : -_ls.size.y, 0.f,
+                                      (_edge_ind == 0 || _edge_ind == 1) ? _ls.size.x : -_ls.size.x };
 
         // printf("V0: %f, %f, %f; V1: %f, %f, %f\n", v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
         // float3 _m = v0 + (v1 - v0) * _t;
@@ -1101,7 +1101,14 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
                v1ss = getImageSScoords(_p, _d1),
                _center_ss = getImageSScoords(_p, normalize(_center - _p)),
                _edgec_ss  = getImageSScoords(_p, normalize(_edge_center - _p));
+        // printf("SS: v0 [%f, %f], v1 [%f, %f]\n", v0ss.x, v0ss.y, v1ss.x, v1ss.y);
         float2 _n{v1ss.y - v0ss.y, v0ss.x - v1ss.x}, _m_ss = v0ss + (v1ss - v0ss) * _t;
+
+        int2 _sscoords{(int)floorf(_m_ss.y), (int)floorf(_m_ss.x)};
+        if (_sscoords.x - 1 < 0 || _sscoords.x + 1 > m_winWidth ||
+            _sscoords.y - 1 < 0 || _sscoords.y + 1 > m_winHeight)
+          continue;
+
         _n = normalize(_n);
         if (dot(_n, normalize(_edgec_ss - _center_ss)) < 0)
           _n *= -1;
@@ -1162,9 +1169,9 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
 
 
         // update parameters and loss
-        float _s1 = _dMSEdcenter.x * 1;
-        float _s2 = _dMSEdcenter.y * 1;
-        float _s3 = _dMSEdcenter.z * 1;
+        float _s1 = _dMSEdsize.x * 100;
+        float _s2 = _dMSEdsize.y * 100;
+        float _s3 = _dMSEdcenter.z * 0;
         // _s1 = _dv0.x * (f_diff).x + _dv0.x * (f_diff).y + _dv0.x * (f_diff).z;
         // _s2 = _dv0.y * (f_diff).x + _dv0.y * (f_diff).y + _dv0.y * (f_diff).z;
         // _s3 = _dv0.z * (f_diff).x + _dv0.z * (f_diff).y + _dv0.z * (f_diff).z;
@@ -1225,8 +1232,8 @@ void DLightSourceUpdater::update(AdamOptimizer2<float> &_opt, std::shared_ptr<IS
   _dsize += _m_lights[lightID].size;
   float2 _dscale = _dsize / _m_lights[lightID].size;
   _m_lights[lightID].size = _dsize;
-  instMat.m_col[0] *= _dscale.x;
-  instMat.m_col[2] *= _dscale.y;
+  instMat.m_col[2] *= _dscale.x;
+  instMat.m_col[0] *= _dscale.y;
 
   printf("Size updated: %f, %f, derivative: %f, %f\n", _m_lights[lightID].size.x,
                                                        _m_lights[lightID].size.y,
@@ -1240,7 +1247,7 @@ void Integrator::LightEdgeSamplingInit() {
   AdamOptimizer2<float>* __ptr = new AdamOptimizer2<float>[m_lightInst.size()];
 
   for (uint i = 0; i < m_lightInst.size(); ++i) {
-    __ptr[i].setParamsCount(5, 0.003f);
+    __ptr[i].setParamsCount(5, 0.01f);
     m_adams.push_back(&(__ptr[i]));
   }
 }
@@ -1257,9 +1264,10 @@ void Integrator::paramsIOinit(bool _do_io_stuff, const char *_fname, bool _read_
     }
     read_write = _read_write;
     if (_read_write == false && _iters_to_skip) {
+      const uint _lim = _iters_to_skip * m_lightInst.size();
       uint  _iter{0u};
       float _tmp{0.f};
-      for (uint i = 0u; i < _iters_to_skip; ++i)
+      for (uint i = 0u; i < _lim; ++i)
         param_io >> _iter >> _tmp >> _tmp >> _tmp >> _tmp >> _tmp;
     }
   }
