@@ -307,6 +307,7 @@ public:
   std::vector<LightSource> m_lights;
   std::fstream param_io;
   bool read_write;
+  bool diffrender_mode;
 
 
 

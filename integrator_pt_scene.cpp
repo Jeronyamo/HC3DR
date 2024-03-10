@@ -1399,6 +1399,11 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
   m_remapInst.clear();    m_remapInst.reserve(1000);
   m_pAccelStruct->ClearScene();
   uint32_t realInstId = 0;
+
+  float4 _positions[1];
+  float2 _sizes[1];
+  int lsID = 0;
+
   for(auto inst : scene.InstancesGeom())
   {
     if(inst.instId != realInstId)
@@ -1411,28 +1416,30 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
     }
 
     if (inst.lightInstId != -1) {
-      // printf("Printing light matrix...\n");
-      // for (int i = 0; i < 4; ++i)
-      //   printf("%f, %f, %f, %f\n", inst.matrix.get_row(i)[0], inst.matrix.get_row(i)[1],
-      //                              inst.matrix.get_row(i)[2], inst.matrix.get_row(i)[3]);
-      printf("Light ID: %d, Instance ID: %d\n", inst.lightInstId, inst.instId);
+      float4 _initp{m_lights[inst.lightInstId].pos};
+      float2 _inits{m_lights[inst.lightInstId].size};
+      printf("Light ID: %d, Instance ID: %d, pos: [%f, %f, %f], size: [%f, %f]\n",
+                inst.lightInstId, inst.instId, _initp.x, _initp.y, _initp.z, _inits.x, _inits.y);
 
       float4x4 _tmpmat{inst.matrix};
+      bool _move_lights = diffrender_mode;
 
-      // change pos
-      float4 _dpos{-0.1f, 0.f, 0.1f, 0.f};
+      if (_move_lights) {
+        // change pos
+        float4 _dpos{-0.1f, 0.f, 0.1f, 0.f};
 
-      m_lights[inst.lightInstId].pos += _dpos;
-      _tmpmat.col(3) += _dpos;
+        m_lights[inst.lightInstId].pos += _dpos;
+        _tmpmat.col(3) += _dpos;
 
-      // change size
-      float2 _dsize{0.2f, 0.2f};
+        // change size
+        float2 _dsize{0.2f, 0.2f};
 
-      _dsize += m_lights[inst.lightInstId].size;
-      float2 _dscale = _dsize / m_lights[inst.lightInstId].size;
-      m_lights[inst.lightInstId].size = _dsize;
-      _tmpmat.m_col[0] *= _dscale.x;
-      _tmpmat.m_col[2] *= _dscale.y;
+        _dsize += m_lights[inst.lightInstId].size;
+        float2 _dscale = _dsize / m_lights[inst.lightInstId].size;
+        m_lights[inst.lightInstId].size = _dsize;
+        _tmpmat.m_col[0] *= _dscale.x;
+        _tmpmat.m_col[2] *= _dscale.y;
+      }
 
       uint _id = m_pAccelStruct->AddInstance(inst.geomId, _tmpmat);
       if (_id != inst.instId) {

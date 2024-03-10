@@ -1052,10 +1052,8 @@ float Integrator::sampleSSfrom2Dpoints(const float2 *_v_ss, uint _v_size, int &_
   return 0.f;
 }
 
-// add parameter - reference image,
-//                 num_pixels(? as N for mean(MSE), but maybe some other coef)
 float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
-                                        float* a_DerivPosImg, float* a_DerivNegImg, uint a_passNum) {
+                                        float* a_DerivPosImg, float* a_DerivNegImg, uint _iter) {
   const uint num_samples = 128u;
   const float norm_coef = 1.f / (num_samples);
   float _loss = 0.f;
@@ -1065,9 +1063,7 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
     LightSource _ls = m_lights[_lsu.lightID];
     DLightSource _deriv;
     float3 _p = mul4x3(m_worldViewInv, float3(0,0,0));
-    // printf("CamPos: %f, %f, %f\n", _p.x, _p.y, _p.z);
     float3 _center = to_float3(_ls.pos);
-    // printf("LightCenter: %f, %f, %f\n", _center.x, _center.y, _center.z);
 
 
     if (_ls.geomType == LIGHT_GEOM_RECT) {
@@ -1109,8 +1105,8 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
         _n = normalize(_n);
         if (dot(_n, normalize(_edgec_ss - _center_ss)) < 0)
           _n *= -1;
-        float3 f_in = getColor2(_p, dirFromSScoords((_m_ss - _n * 1.9f).x, (_m_ss - _n * 1.9f).y)),
-              f_out = getColor2(_p, dirFromSScoords((_m_ss + _n * 1.9f).x, (_m_ss + _n * 1.9f).y));
+        float3 f_in = getColor2(_p, dirFromSScoords((_m_ss - _n * 1.f).x, (_m_ss - _n * 1.f).y)),
+              f_out = getColor2(_p, dirFromSScoords((_m_ss + _n * 1.f).x, (_m_ss + _n * 1.f).y));
         float3 f_diff{f_in - f_out};
 
         // float2 _dv0_ss{v1ss.y - _m_ss.y, _m_ss.x - v1ss.x}, _dv1_ss{_m_ss.y - v0ss.y, v0ss.x - _m_ss.x};
@@ -1125,9 +1121,14 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
                _col = {out_color[__ind], out_color[__ind+1], out_color[__ind+2]};
         float3 _colDiff{_col - _colRef};
         // show samples on the images
-        // out_color[__ind] = 1.f;
-        // out_color[__ind+1] = 0.f;
-        // out_color[__ind+2] = 0.f;
+        // if (_n.y > 0) {
+        //   out_color[__ind] = 1.f;
+        //   out_color[__ind+1] = 0.f;
+        //   out_color[__ind+2] = 0.f;
+        //   printf("fi: [%f, %f, %f], fo: [%f, %f, %f], c: [%f, %f, %f], cr: [%f, %f, %f]\n",
+        //                     f_in.x, f_in.y, f_in.z, f_out.x, f_out.y, f_out.z,
+        //                     _col.x, _col.y, _col.z, _colRef.x, _colRef.y, _colRef.z);
+        // }
 
         _loss += dot(_colDiff, _colDiff);
 
@@ -1161,9 +1162,9 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
 
 
         // update parameters and loss
-        float _s1 = _dMSEdsize.x;
-        float _s2 = _dMSEdsize.y;
-        float _s3 = f_diff.z * 0.f;
+        float _s1 = _dMSEdcenter.x * 1;
+        float _s2 = _dMSEdcenter.y * 1;
+        float _s3 = _dMSEdcenter.z * 1;
         // _s1 = _dv0.x * (f_diff).x + _dv0.x * (f_diff).y + _dv0.x * (f_diff).z;
         // _s2 = _dv0.y * (f_diff).x + _dv0.y * (f_diff).y + _dv0.y * (f_diff).z;
         // _s3 = _dv0.z * (f_diff).x + _dv0.z * (f_diff).y + _dv0.z * (f_diff).z;
@@ -1187,7 +1188,7 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
     _deriv.dI_dCz *= norm_coef * _mse_coef;
     _deriv.dI_dSx *= norm_coef * _mse_coef;
     _deriv.dI_dSy *= norm_coef * _mse_coef;
-    _lsu.update(*m_adams[i], m_pAccelStruct, m_lights, _deriv, a_passNum);
+    _lsu.update(*m_adams[i], m_pAccelStruct, m_lights, _deriv, _iter);
     m_lightInst[i] = _lsu;
   }
   m_pAccelStruct->CommitScene();
@@ -1239,15 +1240,9 @@ void Integrator::LightEdgeSamplingInit() {
   AdamOptimizer2<float>* __ptr = new AdamOptimizer2<float>[m_lightInst.size()];
 
   for (uint i = 0; i < m_lightInst.size(); ++i) {
-    // m_dlights.push_back({});
     __ptr[i].setParamsCount(5, 0.003f);
     m_adams.push_back(&(__ptr[i]));
   }
-  // std::cout << "Lights: " << m_lights.size() << "\n";
-  // std::cout << "Light1 type = " << m_lights[1].geomType << "\n";
-  // std::cout << "Pos: "  << m_lights[1].pos.x  << ", " << m_lights[1].pos.y  << ", "
-  //                       << m_lights[1].pos.z  << ", " << m_lights[1].pos.w  << "\n";
-  // std::cout << "Size: " << m_lights[1].size.x << ", " << m_lights[1].size.y << std::endl;
 }
 
 void Integrator::paramsIOinit(bool _do_io_stuff, const char *_fname, bool _read_write, uint _iters_to_skip) {

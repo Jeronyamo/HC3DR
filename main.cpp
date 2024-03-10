@@ -196,6 +196,24 @@ int main(int argc, const char** argv)
   // auto pImpl = std::make_shared<Integrator>(FB_WIDTH*FB_HEIGHT, spectral_mode, gradMode, features);
   
   bool do_diffrender = false;
+  bool do_param_io = false;
+  if (args.hasOption("-drender")) {
+    std::string drender_on_off = args.getOptionValue<std::string>("-drender");
+
+    if (drender_on_off == "ON")
+      do_diffrender = true;
+    else if (drender_on_off != "OFF")
+      throw std::runtime_error("Error: bad argument - drender");
+  }
+  pImpl->diffrender_mode = do_diffrender;
+  if (args.hasOption("-paramio")) {
+    std::string paramio_on_off = args.getOptionValue<std::string>("-drender");
+
+    if (paramio_on_off == "ON")
+      do_param_io = true;
+    else if (paramio_on_off != "OFF")
+      throw std::runtime_error("Error: bad argument - paramio");
+  }
 
   int refW = 0, refH = 0;
   std::vector<float> refColor;
@@ -303,7 +321,7 @@ int main(int argc, const char** argv)
 
     const char* _params_fname = "./out/params.txt";
     if (!do_diffrender) {
-      bool reconstruct = true;
+      bool reconstruct = do_param_io;
       if (reconstruct) {
         uint iter = 1; //     CAN CHOOSE A STEP TO START FROM
         pImpl->paramsIOinit(true, _params_fname, false, iter);
@@ -338,7 +356,7 @@ int main(int argc, const char** argv)
       std::vector<float> derivDataPos(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
       std::vector<float> derivDataNeg(FB_WIDTH*FB_HEIGHT*FB_CHANNELS);
 
-      bool save_param_data = true;
+      bool save_param_data = do_param_io;
       pImpl->paramsIOinit(save_param_data, _params_fname, true);
 
       for(int iter = 0; iter < 1000; iter++) 
@@ -368,7 +386,7 @@ int main(int argc, const char** argv)
         }
 
         float loss = pImpl->LightEdgeSamplingStep(realColor.data(), refColor.data(),
-                                                  derivDataPos.data(), derivDataNeg.data(), PASS_NUMBER);
+                                                  derivDataPos.data(), derivDataNeg.data(), iter);
 
         // pImpl->GetExecutionTime("PathTraceDR", timings);  
         std::cout << "Iteration " << iter << " done, loss = " << loss << ", time = " << timings[0] << " ms" << std::endl;
