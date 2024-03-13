@@ -38,6 +38,19 @@ struct DLightSource
   float dI_dCx = 0.f, dI_dCy = 0.f, dI_dCz = 0.f, // center(pos)
         dI_dSx = 0.f, dI_dSy = 0.f; // size
   // uint n_samples = 0u;
+
+  DLightSource operator*(float _v) const {
+    return { dI_dCx * _v, dI_dCy * _v, dI_dCz * _v, dI_dSx * _v, dI_dSy * _v };
+  }
+
+  DLightSource operator+=(const DLightSource &_dls) {
+    dI_dCx += _dls.dI_dCx;
+    dI_dCy += _dls.dI_dCy;
+    dI_dCz += _dls.dI_dCz;
+    dI_dSx += _dls.dI_dSx;
+    dI_dSy += _dls.dI_dSy;
+    return *this;
+  }
 };
 
 struct LightSample

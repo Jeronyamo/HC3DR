@@ -207,7 +207,7 @@ int main(int argc, const char** argv)
   }
   pImpl->diffrender_mode = do_diffrender;
   if (args.hasOption("-paramio")) {
-    std::string paramio_on_off = args.getOptionValue<std::string>("-drender");
+    std::string paramio_on_off = args.getOptionValue<std::string>("-paramio");
 
     if (paramio_on_off == "ON")
       do_param_io = true;
@@ -323,7 +323,7 @@ int main(int argc, const char** argv)
     if (!do_diffrender) {
       bool reconstruct = do_param_io;
       if (reconstruct) {
-        uint iter = 1; //     CAN CHOOSE A STEP TO START FROM
+        uint iter = 0; //     CAN CHOOSE A STEP TO START FROM
         pImpl->paramsIOinit(true, _params_fname, false, iter);
         while (pImpl->loadParamsFromFile()) {
           std::cout << "Render (" << std::setfill('0') << std::setw(3) << iter << ")" << std::endl;
@@ -359,7 +359,7 @@ int main(int argc, const char** argv)
       bool save_param_data = do_param_io;
       pImpl->paramsIOinit(save_param_data, _params_fname, true);
 
-      for(int iter = 0; iter < 1000; iter++) 
+      for(int iter = 0; iter < 1500; iter++) 
       {
         const int eachTen        = iter/20 + 1;
         const int currPassNumber = PASS_NUMBER; //std::min(PASS_NUMBER*eachTen, 64);
@@ -402,18 +402,18 @@ int main(int argc, const char** argv)
             auto outName = strOut.str();
             SaveImage4fToBMP(realColor.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), 0.5f, 2.4f);
           }
-          {
-            std::stringstream strOut;
-            strOut << "./grad/" << imageOutClean << "_dPos_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
-            auto outName = strOut.str();
-            SaveImage4fToBMP(derivDataPos.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
-          }
-          {
-            std::stringstream strOut;
-            strOut << "./grad/" << imageOutClean << "_dNeg_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
-            auto outName = strOut.str();
-            SaveImage4fToBMP(derivDataNeg.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
-          }
+          // {
+          //   std::stringstream strOut;
+          //   strOut << "./grad/" << imageOutClean << std::setfill('0') << std::setw(4) << iter << "_dPos_" << ".bmp";
+          //   auto outName = strOut.str();
+          //   SaveImage4fToBMP(derivDataPos.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
+          // }
+          // {
+          //   std::stringstream strOut;
+          //   strOut << "./grad/" << imageOutClean << std::setfill('0') << std::setw(4) << iter << "_dNeg_" << ".bmp";
+          //   auto outName = strOut.str();
+          //   SaveImage4fToBMP(derivDataNeg.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, 2.4f);
+          // }
         }
         else if(gradMode == 0)
         {

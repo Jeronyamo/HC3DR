@@ -744,38 +744,8 @@ struct DLightRectParams {
 // Surface equation for secondary edges from the article, returns float
 struct DEdgeEquationSec3D {
   static float a(const float3 &_p, const float3 &_m, const float3 &v0, const float3 &v1) {
-    return DDot::dot(_m - _p, DCross::cross(v0 - _p, v1 - _p));
+    return dot(_m - _p, cross(v0 - _p, v1 - _p));
   }
-};
-
-// Parametrized edge equation, returns a point on edge
-struct DEdgeEquationPrim3D {
-  static float3 a(float _t, const float3 &v0, const float3 &v1) {
-    return v0 + (v1 - v0) * _t; // or  v0*(1-_t) + v1*_t
-  }
-  static float3 da_dv0(float _t) { return { 1.f-_t, 1.f-_t, 1.f-_t }; }
-  static float3 da_dv1(float _t) { return { _t, _t, _t }; }
-
-
-  // for rectangle light sources
-  static float3 a_rect(float _t, const float3 &_center, const float2 &_size, int _edge_ind) {
-    float3 v0 = _center + float3{  _edge_ind & 2 ? _size.x : -_size.x, 0.f,
-                                   (_edge_ind == 1 || _edge_ind == 2) ? _size.y : -_size.y };
-    float3 v1 = _center + float3{ (_edge_ind + 1) & 2 ? _size.x : -_size.x, 0.f,
-                                  (_edge_ind == 0 || _edge_ind == 1) ? _size.y : -_size.y };
-    return v0 + (v1 - v0) * _t; // or  <v0*(1-_t) + v1*_t>
-  }
-  static float3 da_rect_dcenter(float _t, const float3 &_center, const float2 &_size, int _edge_ind) {
-    // float3 v0 = _center + float3{_size0.x, 0.f, _size0.y};
-    // float3 v1 = _center + float3{_size1.x, 0.f, _size1.y};
-    return { 1.f, 1.f, 1.f }; // because <center * (1-_t)  +  center * _t>
-  }
-  static float2 da_rect_dsize(float _t, int _edge_ind) {
-    float2 _sign0 = {  _edge_ind & 2 ? 1 : -1, (_edge_ind == 1 || _edge_ind == 2) ? 1 : -1 };
-    float2 _sign1 = { (_edge_ind + 1) & 2 ? 1 : -1, (_edge_ind == 0 || _edge_ind == 1) ? 1 : -1 };
-    return { _sign0.x * (1.f - _t) + _sign1.x * _t, _sign0.y * (1.f - _t) + _sign1.y * _t };
-  }
-
 };
 
 struct DNorm {
@@ -811,8 +781,106 @@ struct DNorm {
 
 
 
+struct ImgMSE {
+  std::vector<float> grad;
+  uint w, h, params;
 
-static const float _ss_compute_coef = 100.f;
+  ImgMSE() {}
+  ImgMSE(uint _width, uint _height, uint _parameters) :
+      w{_width}, h{_height}, params{_parameters} {
+    grad.resize(w * h * params);
+  }
+
+
+  void nullify() {
+    std::fill(grad.begin(), grad.end(), 0.0f);
+  }
+
+  void add(uint _x, uint _y, const DLightSource &_params, const float3 &_f_diff) {
+    uint _offset = (_y * w + _x) * params;
+    float3 _tmp{_params.dI_dCx * _f_diff};
+
+    grad[_offset    ] += _tmp.x;
+    grad[_offset + 1] += _tmp.y;
+    grad[_offset + 2] += _tmp.z;
+
+    _tmp = _params.dI_dCy * _f_diff;
+    grad[_offset + 3] += _tmp.x;
+    grad[_offset + 4] += _tmp.y;
+    grad[_offset + 5] += _tmp.z;
+
+    _tmp = _params.dI_dCz * _f_diff;
+    grad[_offset + 6] += _tmp.x;
+    grad[_offset + 7] += _tmp.y;
+    grad[_offset + 8] += _tmp.z;
+
+    _tmp = _params.dI_dSx * _f_diff;
+    grad[_offset +  9] += _tmp.x;
+    grad[_offset + 10] += _tmp.y;
+    grad[_offset + 11] += _tmp.z;
+
+    _tmp = _params.dI_dSy * _f_diff;
+    grad[_offset + 12] += _tmp.x;
+    grad[_offset + 13] += _tmp.y;
+    grad[_offset + 14] += _tmp.z;
+  }
+
+  float dmse(const float *_img, const float *_ref, DLightSource &_par) {
+    DLightSource _dloss{0.f, 0.f, 0.f, 0.f, 0.f};
+    float _loss = 0.f;
+
+    for (uint y = 1u; y < h - 1; ++y) {
+      for (uint x = 1u; x < w - 1; ++x) {
+        float3 _colDiff{0.f};
+        DLightSource _tmp{0.f, 0.f, 0.f, 0.f, 0.f};
+
+        _colDiff  = colDiff(x - 1, y - 1, _img, _ref) * 0.0625f;
+        _colDiff += colDiff(x    , y - 1, _img, _ref) * 0.125f;
+        _colDiff += colDiff(x + 1, y - 1, _img, _ref) * 0.0625f;
+        _colDiff += colDiff(x - 1, y    , _img, _ref) * 0.125f;
+        _colDiff += colDiff(x    , y    , _img, _ref) * 0.25f;
+        _colDiff += colDiff(x + 1, y    , _img, _ref) * 0.125f;
+        _colDiff += colDiff(x - 1, y + 1, _img, _ref) * 0.0625f;
+        _colDiff += colDiff(x    , y + 1, _img, _ref) * 0.125f;
+        _colDiff += colDiff(x + 1, y + 1, _img, _ref) * 0.0625f;
+        _loss += dot(_colDiff, _colDiff);
+        _tmp = pixelGrad(x, y, _colDiff);
+        _dloss += _tmp;
+      }
+    }
+    _par = _dloss;
+    return _loss;
+  }
+
+  float3 colDiff(uint _x, uint _y, const float *_img, const float *_ref) {
+    uint ind = _y * w + _x;
+
+    return float3{ _img[ind * 4], _img[ind * 4 + 1], _img[ind * 4 + 2] } -
+           float3{ _ref[ind * 4], _ref[ind * 4 + 1], _ref[ind * 4 + 2] };
+  }
+
+  DLightSource pixelGrad(uint _x, uint _y, const float3 &_col_diff) {
+    uint ind = _y * w + _x;
+    DLightSource _tmp{0.f, 0.f, 0.f, 0.f, 0.f};
+
+    _tmp.dI_dCx = dot(float3{ grad[ind * params    ],
+                              grad[ind * params + 1],
+                              grad[ind * params + 2] }, _col_diff);
+    _tmp.dI_dCy = dot(float3{ grad[ind * params + 3],
+                              grad[ind * params + 4],
+                              grad[ind * params + 5] }, _col_diff);
+    _tmp.dI_dCz = dot(float3{ grad[ind * params + 6],
+                              grad[ind * params + 7],
+                              grad[ind * params + 8] }, _col_diff);
+    _tmp.dI_dSx = dot(float3{ grad[ind * params + 9],
+                              grad[ind * params + 10],
+                              grad[ind * params + 11] }, _col_diff);
+    _tmp.dI_dSy = dot(float3{ grad[ind * params + 12],
+                              grad[ind * params + 13],
+                              grad[ind * params + 14] }, _col_diff);
+    return _tmp;
+  }
+};
 
 uint2 Integrator::getImageIndicesSomehow(const float3 &_pos, const float3 &_dir) {
   uint2 _res{0u, 0u};
@@ -991,7 +1059,7 @@ float3 Integrator::projectSSderivatives(const float3 & _v, const float2 &_dv_ss)
 // 1
   float3 _dir = normalize(_v - _pos);
 // 2
-  float _coef = _ss_compute_coef;
+  float _coef = 100.f;
   float3 pos2 = _pos + _coef * _dir;
 // 3
   float3 rayDirNonnorm = mul4x3(m_worldView, pos2);
@@ -1057,15 +1125,15 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
   const uint num_samples = 512u;
   const float norm_coef = 1.f / (num_samples);
   float _loss = 0.f;
+  ImgMSE _MSE{m_winWidth, m_winHeight, 16u};
 
   for (uint i = 0u; i < m_lightInst.size(); ++i) {
     DLightSourceUpdater _lsu = m_lightInst[i];
     LightSource _ls = m_lights[_lsu.lightID];
-    DLightSource _deriv;
     float3 _p = mul4x3(m_worldViewInv, float3(0,0,0));
-    // printf("CamPos: [%f, %f, %f]\n", _p.x, _p.y, _p.z);
     float3 _center = to_float3(_ls.pos);
 
+    _MSE.nullify();
 
     if (_ls.geomType == LIGHT_GEOM_RECT) {
       // Rectangle. Edges 01-12-23-30
@@ -1086,10 +1154,8 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
         int _edge_ind = 0;
         float _t = sampleSSfrom2Dpoints(_v_ss, 4, _edge_ind);
         // double _t = double(std::rand()) / RAND_MAX;
-        float3 v0 = _center + float3{  _edge_ind &  2 ? _ls.size.y : -_ls.size.y, 0.f,
-                                      (_edge_ind == 1 || _edge_ind == 2) ? _ls.size.x : -_ls.size.x };
-        float3 v1 = _center + float3{ (_edge_ind +  1) & 2 ? _ls.size.y : -_ls.size.y, 0.f,
-                                      (_edge_ind == 0 || _edge_ind == 1) ? _ls.size.x : -_ls.size.x };
+        float3 v0 = _v[_edge_ind];
+        float3 v1 = _v[(_edge_ind + 1) & 3u];
 
         // printf("V0: %f, %f, %f; V1: %f, %f, %f\n", v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
         // float3 _m = v0 + (v1 - v0) * _t;
@@ -1097,104 +1163,122 @@ float Integrator::LightEdgeSamplingStep(float* out_color, const float* a_refImg,
         float3 _edge_center = 0.5f * (v1 + v0);
         // printf("DirToEdge: %f, %f, %f; t: %f\n", _d.x, _d.y, _d.z, _t);
 
-        float2 v0ss = getImageSScoords(_p, _d0),
-               v1ss = getImageSScoords(_p, _d1),
+        float2 v0ss = _v_ss[_edge_ind],
+               v1ss = _v_ss[(_edge_ind + 1) & 3u],
                _center_ss = getImageSScoords(_p, normalize(_center - _p)),
                _edgec_ss  = getImageSScoords(_p, normalize(_edge_center - _p));
-        // printf("SS: v0 [%f, %f], v1 [%f, %f]\n", v0ss.x, v0ss.y, v1ss.x, v1ss.y);
-        float2 _n{v1ss.y - v0ss.y, v0ss.x - v1ss.x}, _m_ss = v0ss + (v1ss - v0ss) * _t;
+        float2 _m_ss = v0ss + (v1ss - v0ss) * _t;
 
-        int2 _sscoords{(int)floorf(_m_ss.y), (int)floorf(_m_ss.x)};
+        // check that sample is in frame
+        int2 _sscoords{(int)floorf(_m_ss.x), (int)floorf(_m_ss.y)};
         if (_sscoords.x - 1 < 0 || _sscoords.x + 1 > m_winWidth ||
             _sscoords.y - 1 < 0 || _sscoords.y + 1 > m_winHeight)
           continue;
 
-        _n = normalize(_n);
+        // normal in SS coords
+        float2 _n = normalize(float2{v1ss.y - v0ss.y, v0ss.x - v1ss.x});
         if (dot(_n, normalize(_edgec_ss - _center_ss)) < 0)
           _n *= -1;
+
         float3 f_in = getColor2(_p, dirFromSScoords((_m_ss - _n * 1.f).x, (_m_ss - _n * 1.f).y)),
               f_out = getColor2(_p, dirFromSScoords((_m_ss + _n * 1.f).x, (_m_ss + _n * 1.f).y));
         float3 f_diff{f_in - f_out};
 
+        // both give the correct result, using the one from the article
         // float2 _dv0_ss{v1ss.y - _m_ss.y, _m_ss.x - v1ss.x}, _dv1_ss{_m_ss.y - v0ss.y, v0ss.x - _m_ss.x};
         float2 _dv0_ss{_n.x * _t, _n.y * _t}, _dv1_ss{_n.x * (1.f - _t), _n.y * (1.f - _t)}; // screen space derivatives
+
         // backprop from dv0ss, dv1ss to dv0, dv1
         float3 _dv0 = projectSSderivatives(v0, _dv0_ss), _dv1 = projectSSderivatives(v1, _dv1_ss);
 
         // image derivative and loss:
-        uint __ind = ((uint)floorf(_m_ss.y) * m_winWidth + (uint)floorf( _m_ss.x)) << 2;
+        uint __ind = (_sscoords.y * m_winWidth + _sscoords.x) << 2;
         // 4-channel image, but only need 3 components
         float3 _colRef = {a_refImg[__ind], a_refImg[__ind+1], a_refImg[__ind+2]},
                _col = {out_color[__ind], out_color[__ind+1], out_color[__ind+2]};
         float3 _colDiff{_col - _colRef};
         // show samples on the images
-        // if (_n.y > 0) {
-        //   out_color[__ind] = 1.f;
-        //   out_color[__ind+1] = 0.f;
-        //   out_color[__ind+2] = 0.f;
-        //   printf("fi: [%f, %f, %f], fo: [%f, %f, %f], c: [%f, %f, %f], cr: [%f, %f, %f]\n",
-        //                     f_in.x, f_in.y, f_in.z, f_out.x, f_out.y, f_out.z,
-        //                     _col.x, _col.y, _col.z, _colRef.x, _colRef.y, _colRef.z);
-        // }
+        // out_color[__ind] = 1.f;
+        // out_color[__ind+1] = 0.f;
+        // out_color[__ind+2] = 0.f;
 
         _loss += dot(_colDiff, _colDiff);
 
-// v0
-        float3 _dIdv0x = _dv0.x * f_diff,
-               _dIdv0y = _dv0.y * f_diff,
-               _dIdv0z = _dv0.z * f_diff;
-        float3 _dMSEdv0 = { dot(_colDiff, _dIdv0x),
-                            dot(_colDiff, _dIdv0y),
-                            dot(_colDiff, _dIdv0z)};
-        float3 _dMSEdcenter = { dot(_dMSEdv0, DLightRectParams::dcenterx()),
-                                dot(_dMSEdv0, DLightRectParams::dcentery()),
-                                dot(_dMSEdv0, DLightRectParams::dcenterz()) };
-        _dMSEdcenter *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
-        float2 _dMSEdsize = { dot(_dMSEdv0, DLightRectParams::dsizex(_edge_ind)),
-                              dot(_dMSEdv0, DLightRectParams::dsizey(_edge_ind)) };
-        _dMSEdsize *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+// compute derivatives - new
+        float3 _dv0dC = float3{ dot(_dv0, DLightRectParams::dcenterx()),
+                                dot(_dv0, DLightRectParams::dcentery()),
+                                dot(_dv0, DLightRectParams::dcenterz())};
+        float2 _dv0dS = float2{ dot(_dv0, DLightRectParams::dsizex(_edge_ind)),
+                                dot(_dv0, DLightRectParams::dsizey(_edge_ind))};
+        float3 _dv1dC = float3{ dot(_dv1, DLightRectParams::dcenterx()),
+                                dot(_dv1, DLightRectParams::dcentery()),
+                                dot(_dv1, DLightRectParams::dcenterz())};
+        float2 _dv1dS = float2{ dot(_dv1, DLightRectParams::dsizex(_edge_ind+1)),
+                                dot(_dv1, DLightRectParams::dsizey(_edge_ind+1))};
+        
+        DLightSource __tmpParams{(_dv0dC.x * (1.f - _t) + _dv1dC.x * _t),
+                                 (_dv0dC.y * (1.f - _t) + _dv1dC.y * _t),
+                                 (_dv0dC.z * (1.f - _t) + _dv1dC.z * _t),
+                                 (_dv0dS.x * (1.f - _t) + _dv1dS.x * _t),
+                                 (_dv0dS.y * (1.f - _t) + _dv1dS.y * _t)};
+        _MSE.add(_sscoords.x, _sscoords.y, __tmpParams, f_diff);
 
-// v1
-        float3 _dIdv1x = _dv1.x * f_diff,
-               _dIdv1y = _dv1.y * f_diff,
-               _dIdv1z = _dv1.z * f_diff;
-        float3 _dMSEdv1 = { dot(_colDiff, _dIdv1x),
-                            dot(_colDiff, _dIdv1y),
-                            dot(_colDiff, _dIdv1z)};
-        _dMSEdcenter += float3{ dot(_dMSEdv1, DLightRectParams::dcenterx()),
-                                dot(_dMSEdv1, DLightRectParams::dcentery()),
-                                dot(_dMSEdv1, DLightRectParams::dcenterz()) } * _t;
-        _dMSEdsize += float2{ dot(_dMSEdv1, DLightRectParams::dsizex(_edge_ind)),
-                              dot(_dMSEdv1, DLightRectParams::dsizey(_edge_ind)) } * _t;
+// // v0
+//         float3 _dIdv0x = _dv0.x * f_diff,
+//                _dIdv0y = _dv0.y * f_diff,
+//                _dIdv0z = _dv0.z * f_diff;
+//         float3 _dMSEdv0 = { dot(_colDiff, _dIdv0x),
+//                             dot(_colDiff, _dIdv0y),
+//                             dot(_colDiff, _dIdv0z)};
+//         float3 _dMSEdcenter = { dot(_dMSEdv0, DLightRectParams::dcenterx()),
+//                                 dot(_dMSEdv0, DLightRectParams::dcentery()),
+//                                 dot(_dMSEdv0, DLightRectParams::dcenterz()) };
+//         _dMSEdcenter *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+//         float2 _dMSEdsize = { dot(_dMSEdv0, DLightRectParams::dsizex(_edge_ind)),
+//                               dot(_dMSEdv0, DLightRectParams::dsizey(_edge_ind)) };
+//         _dMSEdsize *= 1.f - _t; // v0*(1-t) + v1*t, this is for v0
+
+// // v1
+//         float3 _dIdv1x = _dv1.x * f_diff,
+//                _dIdv1y = _dv1.y * f_diff,
+//                _dIdv1z = _dv1.z * f_diff;
+//         float3 _dMSEdv1 = { dot(_colDiff, _dIdv1x),
+//                             dot(_colDiff, _dIdv1y),
+//                             dot(_colDiff, _dIdv1z)};
+//         _dMSEdcenter += float3{ dot(_dMSEdv1, DLightRectParams::dcenterx()),
+//                                 dot(_dMSEdv1, DLightRectParams::dcentery()),
+//                                 dot(_dMSEdv1, DLightRectParams::dcenterz()) } * _t;
+//         _dMSEdsize += float2{ dot(_dMSEdv1, DLightRectParams::dsizex(_edge_ind + 1)),
+//                               dot(_dMSEdv1, DLightRectParams::dsizey(_edge_ind + 1)) } * _t;
 
 
-        // update parameters and loss
-        float _s1 = _dMSEdsize.x * 100;
-        float _s2 = _dMSEdsize.y * 100;
-        float _s3 = _dMSEdcenter.z * 0;
-        // _s1 = _dv0.x * (f_diff).x + _dv0.x * (f_diff).y + _dv0.x * (f_diff).z;
-        // _s2 = _dv0.y * (f_diff).x + _dv0.y * (f_diff).y + _dv0.y * (f_diff).z;
-        // _s3 = _dv0.z * (f_diff).x + _dv0.z * (f_diff).y + _dv0.z * (f_diff).z;
-        if (_s1 < 0) a_DerivNegImg[__ind  ] += _s1 * -3; else a_DerivPosImg[__ind  ] += _s1 * 3;
-        if (_s2 < 0) a_DerivNegImg[__ind+1] += _s2 * -3; else a_DerivPosImg[__ind+1] += _s2 * 3;
-        if (_s3 < 0) a_DerivNegImg[__ind+2] += _s3 * -3; else a_DerivPosImg[__ind+2] += _s3 * 3;
+        // // update parameters and loss
+        // float _s1 = _dMSEdsize.x * 100;
+        // float _s2 = _dMSEdsize.y * 100;
+        // float _s3 = _dMSEdcenter.x * 100;
+        // if (_s1 < 0) a_DerivNegImg[__ind  ] += _s1 * -3; else a_DerivPosImg[__ind  ] += _s1 * 3;
+        // if (_s2 < 0) a_DerivNegImg[__ind+1] += _s2 * -3; else a_DerivPosImg[__ind+1] += _s2 * 3;
+        // if (_s3 < 0) a_DerivNegImg[__ind+2] += _s3 * -3; else a_DerivPosImg[__ind+2] += _s3 * 3;
 
-        _deriv.dI_dCx += _dMSEdcenter.x;
-        _deriv.dI_dCy += _dMSEdcenter.y;
-        _deriv.dI_dCz += _dMSEdcenter.z;
-        _deriv.dI_dSx += _dMSEdsize.x;
-        _deriv.dI_dSy += _dMSEdsize.y;
+        // _deriv.dI_dCx += _dMSEdcenter.x;
+        // _deriv.dI_dCy += _dMSEdcenter.y;
+        // _deriv.dI_dCz += _dMSEdcenter.z;
+        // _deriv.dI_dSx += _dMSEdsize.x;
+        // _deriv.dI_dSy += _dMSEdsize.y;
       }
     }
     // Circle. TODO
     // Sphere. TODO
 
+    DLightSource _deriv{0.f, 0.f, 0.f, 0.f, 0.f};
+    _MSE.dmse(out_color, a_refImg, _deriv);
     float _mse_coef = 2.f / (m_winHeight * m_winWidth);
-    _deriv.dI_dCx *= norm_coef * _mse_coef;
-    _deriv.dI_dCy *= norm_coef * _mse_coef;
-    _deriv.dI_dCz *= norm_coef * _mse_coef;
-    _deriv.dI_dSx *= norm_coef * _mse_coef;
-    _deriv.dI_dSy *= norm_coef * _mse_coef;
+    _deriv = _deriv * (norm_coef * _mse_coef);
+    // _deriv.dI_dCx *= norm_coef * _mse_coef;
+    // _deriv.dI_dCy *= norm_coef * _mse_coef;
+    // _deriv.dI_dCz *= norm_coef * _mse_coef;
+    // _deriv.dI_dSx *= norm_coef * _mse_coef;
+    // _deriv.dI_dSy *= norm_coef * _mse_coef;
     _lsu.update(*m_adams[i], m_pAccelStruct, m_lights, _deriv, _iter);
     m_lightInst[i] = _lsu;
   }
@@ -1245,9 +1329,10 @@ void DLightSourceUpdater::update(AdamOptimizer2<float> &_opt, std::shared_ptr<IS
 
 void Integrator::LightEdgeSamplingInit() {
   AdamOptimizer2<float>* __ptr = new AdamOptimizer2<float>[m_lightInst.size()];
+  const float _lr = 0.01f;
 
   for (uint i = 0; i < m_lightInst.size(); ++i) {
-    __ptr[i].setParamsCount(5, 0.01f);
+    __ptr[i].setParamsCount(5, _lr);
     m_adams.push_back(&(__ptr[i]));
   }
 }
@@ -1288,8 +1373,8 @@ bool Integrator::loadParamsFromFile() {
 
     param_io >> _newpos.x >> _newpos.y >> _newpos.z >> _newsize.x >> _newsize.y;
 
-    _tmp.instMat.m_col[0] *= _newsize.x / _ls.size.x;
-    _tmp.instMat.m_col[2] *= _newsize.y / _ls.size.y;
+    _tmp.instMat.m_col[2] *= _newsize.x / _ls.size.x;
+    _tmp.instMat.m_col[0] *= _newsize.y / _ls.size.y;
     _tmp.instMat.m_col[3]  = _newpos;
     _ls.pos = _newpos;
     _ls.size = _newsize;

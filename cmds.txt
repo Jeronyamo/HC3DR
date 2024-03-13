@@ -1,3 +1,3 @@
 cmake -DUSE_VULKAN=OFF .
 make
-bin-debug/hydra -in "./scenes/scenelib/statex_00001.xml" -width 512 -height 512 -spp 16
+bin-debug/hydra -in "./scenes/scenelib/statex_00001.xml" -width 512 -height 512 -spp 16 -drender OFF -paramio OFF

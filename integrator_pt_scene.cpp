@@ -1401,18 +1401,19 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
   uint32_t realInstId = 0;
 
 
-  // conference
-  float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
-  float2 _sizes[]{{0.f, -20.f}, {0.f, 0.f}};
+  // // conference
+  // float4 _positions[]{{5.f, 0.f, 0.1f, 0.f},{0.f, 0.f, 0.f, 0.f}};
+  // float2 _sizes[]{{1.f, -28.f}, {0.f, 0.f}};
   // // fireplace hydra
   // float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
   // float2 _sizes[]{{0.f, 0.f}, {0.f, 0.f}};
   // // living room
   // float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
   // float2 _sizes[]{{0.f, 0.f}, {0.f, 0.f}};
-  // // cornell
-  // float4 _positions[]{{-0.1f, 0.f, 0.1f, 0.f}};
-  // float2 _sizes[]{{0.f, 0.f}};
+  // cornell
+  float4 _positions[]{{-0.1f, 0.f, 0.1f, 0.f}};
+  float2 _sizes[]{{0.2f, -0.1f}};
+
   int lsID = 0;
 
   for(auto inst : scene.InstancesGeom())
@@ -1467,6 +1468,7 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
 
         // change size
         float2 _dsize{_sizes[lsID]};
+        printf("dsize = %f, %f\n", _dsize.x, _dsize.y);
 
         _dsize += m_lights[inst.lightInstId].size;
         float2 _dscale = _dsize / m_lights[inst.lightInstId].size;
