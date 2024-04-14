@@ -9,7 +9,7 @@ if(USE_ENZYME)
   set(CLANG_VERSION "17" CACHE STRING "clang and LLVM version to use")
   set(CMAKE_C_COMPILER   "/usr/bin/clang-${CLANG_VERSION}")   # $ export CC=/usr/bin/clang-17
   set(CMAKE_CXX_COMPILER "/usr/bin/clang++-${CLANG_VERSION}") # $ export CXX=/usr/bin/clang++-17
-  set(ENZYME_PLUGIN_DLL  "/home/frol/PROG/enzyme_098/build/Enzyme/ClangEnzyme-${CLANG_VERSION}.so")
+  #set(ENZYME_PLUGIN_DLL  "/home/frol/PROG/enzyme_098/build/Enzyme/ClangEnzyme-${CLANG_VERSION}.so")
   include_directories(${CMAKE_CURRENT_SOURCE_DIR})
   add_definitions(-DUSE_ENZYME)
 endif()
@@ -198,7 +198,7 @@ endif()
 
 if(USE_ENZYME)
   set(ENZYME_FLAGS "-fplugin=${ENZYME_PLUGIN_DLL}") # -fplugin=${ENZYME_PLUGIN_DLL}
-  set(OMP_FLAGS "-fopenmp=libomp ") # -fplugin=${ENZYME_PLUGIN_DLL}
+  set(OMP_FLAGS "-fopenmp=libomp") # -fplugin=${ENZYME_PLUGIN_DLL}
   target_compile_options(hydra PUBLIC ${OMP_FLAGS} ${ENZYME_FLAGS})
 else()
   set(CUSTOM_OMP "")

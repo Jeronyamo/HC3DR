@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <omp.h>
 
 #include "integrator_pt.h"
 #include "ArgParser.h"
@@ -375,6 +376,12 @@ int main(int argc, const char** argv)
         pImpl->saveParamsToFile(iter);
         pImpl->PathTraceBlock(FB_WIDTH*FB_HEIGHT, FB_CHANNELS, realColor.data(), PASS_NUMBER);
         std::cout << "Path trace complete" << std::endl;
+        {
+          std::stringstream strOut;
+          strOut << "./out_pretty/" << imageOutClean << "_out_" << std::setfill('0') << std::setw(2) << iter << ".bmp";
+          auto outName = strOut.str();
+          SaveImage4fToBMP(realColor.data(), FB_WIDTH, FB_HEIGHT, outName.c_str(), normConst, gamma);
+        }
         for (uint i = 0; i < FB_WIDTH*FB_HEIGHT*FB_CHANNELS; ++i) {
           realColor[i] = clamp(realColor[i]*normConst, 0.0f, 1.0f);
 
@@ -385,9 +392,12 @@ int main(int argc, const char** argv)
             realColor[i] = 1.055f * std::pow(realColor[i], 1.0f/2.4f) - 0.055f;
         }
 
+        std::vector <DLightSource> __shadowDerivative;
+        __shadowDerivative.resize(pImpl->m_lightInst.size());
+        pImpl->shadowEdgeSamplingStep(realColor.data(), refColor.data(), __shadowDerivative);
         float loss = pImpl->LightEdgeSamplingStep(realColor.data(), refColor.data(),
-                                                  derivDataPos.data(), derivDataNeg.data(), iter);
-
+                                                  derivDataPos.data(), derivDataNeg.data(), iter, __shadowDerivative);
+        pImpl->simpleSampler();
         // pImpl->GetExecutionTime("PathTraceDR", timings);  
         std::cout << "Iteration " << iter << " done, loss = " << loss << ", time = " << timings[0] << " ms" << std::endl;
 

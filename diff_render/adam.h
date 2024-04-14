@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cmath>
+#include <omp.h>
 
 template<typename T> T AdamEps() { return T(1e-8); }
 template<> double      AdamEps() { return double(1e-20f); }

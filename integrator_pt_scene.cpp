@@ -1373,6 +1373,7 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
     //                                        currMesh.vPos4f[i].z, currMesh.vPos4f[i].w);
     // }
     auto geomId   = m_pAccelStruct->AddGeom_Triangles3f((const float*)currMesh.vPos4f.data(), currMesh.vPos4f.size(), currMesh.indices.data(), currMesh.indices.size(), BUILD_HIGH, sizeof(float)*4);
+    printf("Mesh %d: %d vertices\n", geomId, currMesh.vPos4f.size());
 
     (void)geomId; // silence unused var. warning
 
@@ -1411,13 +1412,14 @@ bool Integrator::LoadScene(const char* a_scenePath, const char* a_sncDir)
   // float4 _positions[]{{0.f, 0.f, 0.f, 0.f},{0.f, 0.f, 0.f, 0.f}};
   // float2 _sizes[]{{0.f, 0.f}, {0.f, 0.f}};
   // cornell
-  float4 _positions[]{{-0.1f, 0.f, 0.1f, 0.f}};
-  float2 _sizes[]{{0.2f, -0.1f}};
+  float4 _positions[]{{2.0f, 0.f, 0.1f, 0.f}};
+  float2 _sizes[]{{0.f, -0.f}};
 
   int lsID = 0;
 
   for(auto inst : scene.InstancesGeom())
   {
+    if (inst.geomId == 1) continue;
     if(inst.instId != realInstId)
     {
       #ifdef _DEBUG

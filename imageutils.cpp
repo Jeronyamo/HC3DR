@@ -5,6 +5,7 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+#include <omp.h>
 
 #if defined(_WIN32)
     #ifndef NOMINMAX

@@ -35,6 +35,8 @@
 build_generated/
 grad/
 out/
+out_pretty/
+CmakeFiles/
 
 
 # Files

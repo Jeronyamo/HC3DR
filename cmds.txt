@@ -1,3 +1,3 @@
 cmake -DUSE_VULKAN=OFF .
 make
-bin-debug/hydra -in "./scenes/scenelib/statex_00001.xml" -width 512 -height 512 -spp 16 -drender OFF -paramio OFF
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_ENZYME=ON -DCLANG_VERSION=17 -DENZYME_PLUGIN_DLL='/mnt/c/Programming/study/MSUProject/Enzyme/enzyme/bin/Enzyme/ClangEnzyme-17.so' .

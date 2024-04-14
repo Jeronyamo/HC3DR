@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <cfloat>
+#include <omp.h>
 
 #include "CrossRT.h" // special include for ray tracing
 #include "Image2d.h" // special include for textures
@@ -102,17 +103,27 @@ public:
   virtual void saveParamsToFile(uint _iter);
   virtual void LightEdgeSamplingInit();
   virtual float sampleSSfrom2Dpoints(const float2 *_v, uint _v_size, int &_edge_int);
-  virtual float LightEdgeSamplingStep(float* out_color, const float* a_refImg,
-                                      float* a_DerivPosImg, float* a_DerivNegImg, uint a_passNum);
-  virtual float3 sampleImage(const float2 &_coords, const float *_image);
-  virtual float3 sampleImageBilinear(const float2 &_coords, const float *_image);
+  virtual float sampleEdgePtfrom3Dpoints(const float3 *_v, uint _v_size, int &_edge_int);
+  virtual float LightEdgeSamplingStep(float* out_color, const float* a_refImg, float* a_DerivPosImg,
+                                      float* a_DerivNegImg, uint a_passNum, const std::vector<DLightSource> &_shadowDerivative);
+  virtual void shadowEdgeSamplingStep(float* out_color, const float* a_refImg, std::vector<DLightSource> &_shadowDerivative);
+  virtual float3 SampleLightSourceByID(uint tid, const float4* rayPosAndNear, const float4* rayDirAndFar, 
+                                      const float4* wavelengths, const float4* in_hitPart1, const float4* in_hitPart2, const float4* in_hitPart3,
+                                      const uint* rayFlags, uint bounce, int lightId, const LightSample &lSam);
+  virtual float3 dSampleLightSource(const float3 &shadowRayPos, const float3 &shadowRayDir, const float3 &_m, const float3 &ray_dir, const float4* wavelengths,
+                                    const float4* in_hitPart1, const float4* in_hitPart2, const float4* in_hitPart3,
+                                    const uint* rayFlags, int lightId, float hitDist, RandomGen* a_gen);
+  float3 sampleImageConv(const uint2 &_coords, const float *_image);
+  // virtual float dLightEvalPDF(int a_lightId, float3 illuminationPoint, float3 ray_dir, const float3 lpos, const float3 lnorm);
+  // virtual void dNextBounce(uint tid, uint bounce, const float4* in_hitPart1, const float4* in_hitPart2, const float4* in_hitPart3, const uint* in_instId,
+  //                                     const float4* in_shadeColor, float4* rayPosAndNear, float4* rayDirAndFar, const float4* wavelengths,
+  //                                     float4* accumColor, float4* accumThoroughput, RandomGen* a_gen, MisData* misPrev, uint* rayFlags);
+  void simpleSampler();
 
   virtual uint2 getImageIndicesSomehow(const float3 &_pos, const float3 &_dir);
   virtual float2 getImageSScoords(const float3 &_pos, const float3 &_dir);
   virtual float3 dirFromSScoords(float _x, float _y);
 
-  virtual float3 projectSSperspective(const float3 &_p, const float2 &_dxy);
-  virtual float3 projectSSdmatmul(const float4x4 &_mat, const float3 &_v, const float3 &_dv_local);
   virtual float3 projectSSderivatives(const float3 & _v, const float2 &_dv_ss);
   virtual void getColorAfterIntersection(uint tid, const Lite_Hit* in_hit,
                                      const float2* bars, float4* finalColor);

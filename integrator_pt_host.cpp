@@ -1,5 +1,6 @@
 #pragma once
 
+#include <omp.h>
 #include "integrator_pt.h"
 #include "include/crandom.h"
 
